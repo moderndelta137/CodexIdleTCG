@@ -245,7 +245,6 @@ const DEFAULT_META = {
 // --- Components ---
 
 const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAfford, scale = 1, inHand = false, level = 1, overrideValue, isDiscardMode = false, isAnimNew = false, isEventNode = false }) => {
-  const [isDragging, setIsDragging] = useState(false);
   const card = overrideCard || CARD_DB[cardId];
   if (!card) return null;
 
@@ -281,10 +280,8 @@ const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAffor
       onDragStart={(e) => {
           if (inHand) {
               e.dataTransfer.setData('text/plain', card.runId);
-              setIsDragging(true);
           }
       }}
-      onDragEnd={() => setIsDragging(false)}
       className={`relative rounded shadow-[0_5px_15px_rgba(0,0,0,0.6)] transition-all duration-300 transform font-tech
         ${inHand ? 'md:hover:-translate-y-4 hover:shadow-[0_10px_20px_rgba(0,0,0,0.8)] z-10' : ''}
         ${(!canAfford || isEventNode) && inHand && !isDiscardMode ? 'opacity-50 grayscale hover:grayscale-0' : 'opacity-100'}
@@ -452,7 +449,6 @@ export default function App() {
   
   // Interactive Map State
   const [zoom, setZoom] = useState(1);
-  const [flashMana, setFlashMana] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [levelBanner, setLevelBanner] = useState(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -461,20 +457,24 @@ export default function App() {
 
   useEffect(() => {
       if (view === 'skills') {
-          const w = window.innerWidth;
-          const h = window.innerHeight;
-          const canvasSize = 1600;
-          const z = w < 768 ? 0.6 : 0.85;
-          setZoom(z);
-          const headerH = 70;
-          const viewH = h - headerH;
-          setPan({ x: (w - canvasSize * z) / 2, y: headerH + (viewH - canvasSize * z) / 2 });
+          const rafId = requestAnimationFrame(() => {
+              const w = window.innerWidth;
+              const h = window.innerHeight;
+              const canvasSize = 1600;
+              const z = w < 768 ? 0.6 : 0.85;
+              const headerH = 70;
+              const viewH = h - headerH;
+              setZoom(z);
+              setPan({ x: (w - canvasSize * z) / 2, y: headerH + (viewH - canvasSize * z) / 2 });
+          });
+          return () => cancelAnimationFrame(rafId);
       }
   }, [view]);
   
   const [recentAdds, setRecentAdds] = useState([]); 
   const [unlockAnimId, setUnlockAnimId] = useState(null);
   const [upgradeAnimId, setUpgradeAnimId] = useState(null);
+  const [frameNow, setFrameNow] = useState(0);
 
   const generateRunMap = (currentMeta) => {
       const map = [];
@@ -520,17 +520,20 @@ export default function App() {
          const sector = Math.floor(run.nodeIndex / 10) + 1;
          const stage = (run.nodeIndex % 10) + 1;
          const isBoss = run.runMap && run.runMap[run.nodeIndex]?.type === 'boss';
-         
-         setLevelBanner({ sector, stage, isBoss, visible: true });
-         
+         const rafId = requestAnimationFrame(() => {
+             setLevelBanner({ sector, stage, isBoss, visible: true });
+         });
          const t = setTimeout(() => {
              setLevelBanner(prev => prev ? {...prev, visible: false} : null);
          }, 2500);
-         return () => clearTimeout(t);
+         return () => {
+             cancelAnimationFrame(rafId);
+             clearTimeout(t);
+         };
      }
-  }, [run?.nodeIndex]);
+  }, [run]);
 
-  const lastUpdate = useRef(Date.now());
+  const lastUpdate = useRef(0);
   const timerRef = useRef();
 
   // --- Logic Helpers ---
@@ -561,13 +564,13 @@ export default function App() {
     };
   }, []);
 
-  const getEffectiveCost = (card) => {
+  const getEffectiveCost = useCallback((card) => {
     if (meta.freeLowCost && card.cost === 1) return 0;
     if (meta.freeUtil && card.type === 'util' && !card.isHeal) return 0;
     return card.cost;
-  };
+  }, [meta.freeLowCost, meta.freeUtil]);
 
-  const drawInternal = (currentState, amount = 1) => {
+  const drawInternal = useCallback((currentState, amount = 1) => {
       let state = { ...currentState, deck: [...currentState.deck], hand: [...currentState.hand], discard: [...currentState.discard] };
       for (let i = 0; i < amount; i++) {
           if (state.hand.length >= meta.maxHand) break;
@@ -579,7 +582,7 @@ export default function App() {
           if (state.deck.length > 0) state.hand.push(state.deck.pop());
       }
       return state;
-  };
+  }, [meta.maxHand]);
 
   // --- Actions ---
 
@@ -718,8 +721,6 @@ export default function App() {
   const playCard = (card) => {
     const cost = getEffectiveCost(card);
     if (run.mana < cost) {
-      setFlashMana(true);
-      setTimeout(() => setFlashMana(false), 300);
       return;
     }
     setRun(prev => {
@@ -839,13 +840,6 @@ export default function App() {
     });
   };
 
-  const claimRunRewards = () => {
-      setMeta(prev => ({ 
-          ...prev, gp: prev.gp + run.gpEarned, fragments: prev.fragments + run.fragsEarned, packs: prev.packs + run.packsEarned
-      }));
-      setView('menu');
-  };
-
   // --- Game Loop ---
   useEffect(() => {
     if (view !== 'combat' || run.isPaused) return;
@@ -854,6 +848,7 @@ export default function App() {
       const now = Date.now();
       const dt = (now - lastUpdate.current) / 1000;
       lastUpdate.current = now;
+      setFrameNow(now);
 
       setRun(prev => {
         if (prev.hp <= 0) {
@@ -932,7 +927,7 @@ export default function App() {
     lastUpdate.current = Date.now();
     timerRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(timerRef.current);
-  }, [view, run.isPaused, meta.regenRate, meta.autoDrawRate, meta.autoPlayMana, meta.maxHand]);
+  }, [view, run.isPaused, meta.regenRate, meta.autoDrawRate, meta.autoPlayMana, meta.maxHand, meta.kineticMana, meta.manaRefund, meta.manaSurge, drawInternal, getEffectiveCost]);
 
 
   // --- Gacha & Upgrades ---
@@ -1153,6 +1148,7 @@ export default function App() {
 
     const currentMapNode = run.runMap[run.nodeIndex];
     const isCombatNode = currentMapNode && (currentMapNode.type === 'encounter' || currentMapNode.type === 'boss');
+    const renderTimestamp = frameNow;
 
     let monsterTimerPercent = 0;
     let timeLeft = "0.0";
@@ -1166,8 +1162,8 @@ export default function App() {
         showTimer = monsterTimerPercent > 50;
         showDanger = monsterTimerPercent > 80;
         showCritical = monsterTimerPercent > 90;
-        isMonsterAttacking = run.enemyAttackEffects && run.enemyAttackEffects.some(e => Date.now() - e.timestamp < 200);
-        isMonsterDying = run.deathEffect && Date.now() - run.deathEffect < 500;
+        isMonsterAttacking = run.enemyAttackEffects && run.enemyAttackEffects.some(e => renderTimestamp - e.timestamp < 200);
+        isMonsterDying = run.deathEffect && renderTimestamp - run.deathEffect < 500;
         MonsterIcon = run.monster.iconId !== undefined 
             ? (run.monster.isBoss ? BOSS_LIST.map(e=>e.icon)[run.monster.iconId] : ENEMY_LIST.map(e=>e.icon)[run.monster.iconId]) 
             : (run.monster.isBoss ? Trophy : Sword);
@@ -1500,36 +1496,6 @@ export default function App() {
       </div>
     );
   };
-
-  const renderGameOver = () => (
-    <div className="flex flex-col items-center justify-center h-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-950 via-black to-black text-white p-6 font-tech">
-        <h2 className="text-5xl sm:text-7xl font-black text-red-500 uppercase mb-2 drop-shadow-[0_0_20px_rgba(255,0,0,0.8)] text-center">Duel Terminated</h2>
-        <div className="flex flex-col sm:flex-row gap-6 sm:gap-12 my-8 sm:my-12 text-center bg-black/50 p-6 sm:p-8 rounded-lg border border-red-900/50 shadow-[0_0_30px_rgba(255,0,0,0.2)]">
-            <div>
-                <span className="block text-slate-400 text-xs uppercase font-bold tracking-widest mb-1 sm:mb-2">Enemies Cleared</span>
-                <span className="text-3xl sm:text-5xl font-black">{run.kills}</span>
-            </div>
-            <div>
-                <span className="block text-yellow-500 text-xs uppercase font-bold tracking-widest mb-1 sm:mb-2">GP Extracted</span>
-                <span className="text-3xl sm:text-5xl font-black text-yellow-400">+{run.gpEarned}</span>
-            </div>
-            <div>
-                <span className="block text-purple-400 text-xs uppercase font-bold tracking-widest mb-1 sm:mb-2">Fragments</span>
-                <span className="text-3xl sm:text-5xl font-black text-purple-400">+{run.fragsEarned}</span>
-            </div>
-            <div>
-                <span className="block text-blue-400 text-xs uppercase font-bold tracking-widest mb-1 sm:mb-2">Packs</span>
-                <span className="text-3xl sm:text-5xl font-black text-blue-400">+{run.packsEarned}</span>
-            </div>
-        </div>
-        <button 
-            onClick={claimRunRewards}
-            className="px-12 sm:px-16 py-4 sm:py-5 bg-gradient-to-r from-red-600 to-red-900 text-white font-black uppercase tracking-widest rounded-sm hover:from-red-500 hover:to-red-800 transition-colors shadow-[0_0_20px_rgba(255,0,0,0.5)] border border-red-400 text-sm sm:text-base"
-        >
-            Acknowledge & Return
-        </button>
-    </div>
-  );
 
   const renderSkills = () => {
     const buySkill = (skill) => {

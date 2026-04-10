@@ -11,6 +11,10 @@ node_modules
 dist
 dist-ssr
 *.local
+.npm-cache
+.verify
+.verify2
+.verify-cache
 
 # Editor directories and files
 .vscode/*
