@@ -35,6 +35,8 @@ const parseCSV = (text) => {
   });
 };
 
+const getAssetPath = (relativePath) => `${import.meta.env.BASE_URL}${relativePath}`;
+
 // --- Database & Constants ---
 
 let CARD_DB = {
@@ -81,9 +83,11 @@ const BOSS_LIST = [{name:'Void Reaver',icon:Target},{name:'Doom Guard',icon:Crow
 const loadGameData = async () => {
   try {
     const [cardsRes, enemiesRes] = await Promise.all([
-      fetch('/data/cards.csv'),
-      fetch('/data/enemies.csv')
+      fetch(getAssetPath('data/cards.csv')),
+      fetch(getAssetPath('data/enemies.csv'))
     ]);
+    if (!cardsRes.ok) throw new Error(`Failed to load cards CSV: ${cardsRes.status}`);
+    if (!enemiesRes.ok) throw new Error(`Failed to load enemies CSV: ${enemiesRes.status}`);
     const cardsText = await cardsRes.text();
     const enemiesText = await enemiesRes.text();
 
@@ -105,6 +109,7 @@ const loadGameData = async () => {
       if (row.isHeal === 'true') card.isHeal = true;
       db[card.id] = card;
     });
+    if (Object.keys(db).length === 0) throw new Error('Cards CSV parsed with 0 rows');
     CARD_DB = db;
 
     const enemyRows = parseCSV(enemiesText);
