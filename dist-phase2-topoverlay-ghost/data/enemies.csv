@@ -1,0 +1,11 @@
+name,icon,is_boss,base_hp,base_timer,base_damage
+Enforcer,Bug,false,20,5.0,5
+Sentry,Ghost,false,25,6.0,8
+Drone,Bot,false,15,3.5,3
+Watcher,Eye,false,30,7.0,12
+Revenant,Skull,false,40,8.0,15
+Void Reaver,Target,true,100,7.0,20
+Doom Guard,Crown,true,150,10.0,30
+Soul Eater,Flame,true,80,5.0,15
+Cyber Dragon,Zap,true,200,12.0,40
+Mana Wraith,Hexagon,true,120,6.0,25

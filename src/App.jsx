@@ -220,6 +220,7 @@ const CARD_BGS = {
 
 const WARNING_TEXTS = Array(20).fill("WARNING");
 const DANGER_TEXTS = Array(20).fill("DANGER");
+const MELEE_ATTACK_IDS = new Set(['a1', 'a5', 'a7', 'a8', 'a10']);
 
 // --- Utilities ---
 const shuffle = (array) => {
@@ -249,7 +250,7 @@ const DEFAULT_META = {
 
 // --- Components ---
 
-const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAfford, scale = 1, inHand = false, level = 1, overrideValue, isDiscardMode = false, isAnimNew = false, isEventNode = false }) => {
+const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAfford, scale = 1, inHand = false, level = 1, overrideValue, isDiscardMode = false, isAnimNew = false, isEventNode = false, pixelWidth, pixelHeight }) => {
   const card = overrideCard || CARD_DB[cardId];
   if (!card) return null;
 
@@ -292,12 +293,18 @@ const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAffor
         ${(!canAfford || isEventNode) && inHand && !isDiscardMode ? 'opacity-50 grayscale hover:grayscale-0' : 'opacity-100'}
         ${isAnimNew ? 'animate-[popIn_0.3s_ease-out]' : ''}
         flex flex-col p-[3px] bg-gradient-to-br ${outerBg} select-none border border-black group cursor-pointer overflow-hidden`}
-      style={{ width: `${8 * scale}rem`, height: `${12 * scale}rem` }}
-      onClick={() => { 
+      style={pixelWidth && pixelHeight ? { width: `${pixelWidth}px`, height: `${pixelHeight}px` } : { width: `${8 * scale}rem`, height: `${12 * scale}rem` }}
+      onClick={(e) => { 
           if (inHand && isDiscardMode && onDiscard) {
               onDiscard(card.runId);
           } else if (canAfford && onPlay && !isDiscardMode && !isEventNode) {
-              onPlay(card);
+              const rect = e.currentTarget.getBoundingClientRect();
+              onPlay(card, {
+                  x: rect.left + rect.width / 2,
+                  y: rect.top + rect.height / 2,
+                  width: rect.width,
+                  height: rect.height,
+              });
           } 
       }}
     >
@@ -362,6 +369,456 @@ const CombatStatusPanel = ({ isPlayer, hp, maxHp, title, showDanger, extraConten
         )}
     </div>
 );
+
+const CombatVfxCanvas = ({ activeEffects, enemyAttackEffects, hitStopUntil, enemyRef }) => {
+    const canvasRef = useRef(null);
+    const rafRef = useRef(0);
+    const resizeObserverRef = useRef(null);
+    const particlesRef = useRef([]);
+    const seenActiveRef = useRef(new Set());
+    const seenEnemyRef = useRef(new Set());
+    const lastFrameRef = useRef(0);
+
+    const resizeCanvas = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+        canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    }, []);
+
+    const getMetrics = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return null;
+        const rect = canvas.getBoundingClientRect();
+        const enemyRect = enemyRef.current?.getBoundingClientRect();
+        const fallbackEnemy = { x: rect.width * 0.5, y: rect.height * 0.44 };
+        const enemyCenter = enemyRect
+            ? {
+                x: enemyRect.left - rect.left + enemyRect.width / 2,
+                y: enemyRect.top - rect.top + enemyRect.height / 2,
+            }
+            : fallbackEnemy;
+        return {
+            width: rect.width,
+            height: rect.height,
+            enemy: enemyCenter,
+            player: { x: rect.width * 0.5, y: rect.height * 0.965 },
+        };
+    }, [enemyRef]);
+
+    const pushParticle = useCallback((particle) => {
+        particlesRef.current.push(particle);
+    }, []);
+
+    const withAlpha = useCallback((rgba, alpha) => {
+        const match = rgba.match(/rgba\((\d+),(\d+),(\d+),[^)]+\)/);
+        if (!match) return rgba;
+        return `rgba(${match[1]},${match[2]},${match[3]},${alpha})`;
+    }, []);
+
+    const spawnImpactBurst = useCallback((origin, color, count, now, spread = 1) => {
+        for (let i = 0; i < count; i++) {
+            const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
+            pushParticle({
+                kind: 'spark',
+                born: now + i * 6,
+                ttl: 150 + Math.random() * 70,
+                x: origin.x,
+                y: origin.y,
+                vx: Math.cos(angle) * (560 + Math.random() * 440) * spread,
+                vy: Math.sin(angle) * (420 + Math.random() * 340) * spread,
+                damping: 2.8 + Math.random() * 0.8,
+                length: 34 + Math.random() * 52,
+                width: 2 + Math.random() * 2.8,
+                color,
+            });
+        }
+    }, [pushParticle]);
+
+    const spawnActiveEffect = useCallback((fx) => {
+        const metrics = getMetrics();
+        if (!metrics) return;
+        const now = performance.now();
+        const profile = fx.attackProfile;
+
+        if (fx.type === 'atk' && profile) {
+            const powerScale = fx.cost >= 5 ? 1.55 : fx.cost >= 3 ? 1.28 : 1;
+            if (profile.style === 'melee') {
+                const slashLength = metrics.width * (fx.cost >= 3 ? 1.05 : 0.94);
+                const slashDirections = [-72, -48, -24, 18, 42, 66];
+                const randomDirection = slashDirections[Math.floor(Math.random() * slashDirections.length)];
+                const randomJitter = (Math.random() - 0.5) * 18;
+                pushParticle({
+                    kind: 'slash',
+                    born: now,
+                    ttl: 180,
+                    x: metrics.enemy.x,
+                    y: metrics.enemy.y,
+                    angle: (randomDirection + randomJitter) * (Math.PI / 180),
+                    length: slashLength * powerScale,
+                    width: (fx.cost >= 3 ? 26 : 16) * powerScale,
+                    colorA: 'rgba(255,244,244,1)',
+                    colorB: 'rgba(255,48,48,0.95)',
+                    offset: (Math.random() - 0.5) * 20,
+                });
+                pushParticle({
+                    kind: 'coreFlash',
+                    born: now,
+                    ttl: 135,
+                    x: metrics.enemy.x,
+                    y: metrics.enemy.y,
+                    radius: (fx.cost >= 3 ? 68 : 50) * powerScale,
+                    color: 'rgba(255,70,70,0.95)',
+                });
+                pushParticle({
+                    kind: 'coreFlash',
+                    born: now + 24,
+                    ttl: 150,
+                    x: metrics.enemy.x,
+                    y: metrics.enemy.y,
+                    radius: (fx.cost >= 3 ? 88 : 64) * powerScale,
+                    color: 'rgba(255,24,24,0.78)',
+                });
+                pushParticle({
+                    kind: 'ring',
+                    born: now,
+                    ttl: 220,
+                    x: metrics.enemy.x,
+                    y: metrics.enemy.y,
+                    radius: (fx.cost >= 3 ? 128 : 98) * powerScale,
+                    lineWidth: (fx.cost >= 3 ? 9 : 6) * powerScale,
+                    color: 'rgba(255,58,58,0.9)',
+                });
+                spawnImpactBurst(metrics.enemy, 'rgba(255,240,240,0.95)', fx.cost >= 3 ? 34 : 24, now, fx.cost >= 3 ? 2.7 : 1.95);
+                spawnImpactBurst(metrics.enemy, 'rgba(255,90,90,0.92)', fx.cost >= 3 ? 18 : 10, now + 16, fx.cost >= 3 ? 1.65 : 1.15);
+            } else {
+                pushParticle({
+                    kind: 'projectile',
+                    born: now,
+                    ttl: fx.cost >= 3 ? 130 : 95,
+                    x0: metrics.player.x,
+                    y0: metrics.player.y - 28,
+                    x1: metrics.enemy.x,
+                    y1: metrics.enemy.y,
+                    width: profile.projectileWidth * (fx.cost >= 3 ? 2.1 : 1.65),
+                    color: profile.impactColor,
+                    glow: fx.cost >= 3 ? 54 : 34,
+                    headRadius: fx.cost >= 3 ? 24 : 16,
+                });
+                pushParticle({
+                    kind: 'muzzle',
+                    born: now,
+                    ttl: 90,
+                    x: metrics.player.x,
+                    y: metrics.player.y - 28,
+                    radius: fx.cost >= 3 ? 38 : 28,
+                    spikeLength: fx.cost >= 3 ? 72 : 52,
+                    color: withAlpha(profile.impactColor, 0.92),
+                    rotation: (Math.random() - 0.5) * 0.26,
+                });
+                pushParticle({
+                    kind: 'coreFlash',
+                    born: now + (fx.cost >= 3 ? 72 : 56),
+                    ttl: 130,
+                    x: metrics.enemy.x,
+                    y: metrics.enemy.y,
+                    radius: 42 * powerScale,
+                    color: profile.impactColor,
+                });
+                pushParticle({
+                    kind: 'ring',
+                    born: now + (fx.cost >= 3 ? 68 : 52),
+                    ttl: 150,
+                    x: metrics.enemy.x,
+                    y: metrics.enemy.y,
+                    radius: (fx.cost >= 3 ? 116 : 84) * powerScale,
+                    lineWidth: (fx.cost >= 3 ? 8 : 5) * powerScale,
+                    color: profile.impactColor,
+                });
+                spawnImpactBurst(metrics.enemy, 'rgba(230,250,255,0.95)', fx.cost >= 3 ? 34 : 24, now + (fx.cost >= 3 ? 68 : 52), fx.cost >= 3 ? 2.35 : 1.85);
+                spawnImpactBurst(metrics.enemy, withAlpha(profile.impactColor, 0.95), fx.cost >= 3 ? 16 : 10, now + (fx.cost >= 3 ? 82 : 64), fx.cost >= 3 ? 1.45 : 1.12);
+            }
+            return;
+        }
+
+        if (fx.type === 'def' || fx.type === 'heal' || fx.type === 'util') {
+            const color = fx.type === 'def'
+                ? 'rgba(96,165,250,0.85)'
+                : fx.type === 'heal'
+                    ? 'rgba(74,222,128,0.9)'
+                    : 'rgba(34,211,238,0.85)';
+            pushParticle({
+                kind: 'ring',
+                born: now,
+                ttl: 240,
+                x: metrics.player.x,
+                y: metrics.player.y - 10,
+                radius: fx.type === 'util' ? 86 : 118,
+                lineWidth: fx.type === 'util' ? 4 : 6,
+                color,
+                dashed: fx.type === 'util',
+            });
+            pushParticle({
+                kind: 'coreFlash',
+                born: now,
+                ttl: 140,
+                x: metrics.player.x,
+                y: metrics.player.y - 10,
+                radius: fx.type === 'util' ? 22 : 28,
+                color,
+            });
+        }
+    }, [getMetrics, pushParticle, spawnImpactBurst, withAlpha]);
+
+    const spawnEnemyAttack = useCallback(() => {
+        const metrics = getMetrics();
+        if (!metrics) return;
+        const now = performance.now();
+        pushParticle({
+            kind: 'enemySlash',
+            born: now,
+            ttl: 180,
+            width: metrics.width,
+            height: metrics.height,
+        });
+        pushParticle({
+            kind: 'coreFlash',
+            born: now + 30,
+            ttl: 110,
+            x: metrics.player.x,
+            y: metrics.player.y - 42,
+            radius: 30,
+            color: 'rgba(255,90,90,0.92)',
+        });
+        spawnImpactBurst({ x: metrics.player.x, y: metrics.player.y - 40 }, 'rgba(255,120,120,0.95)', 12, now, 1.35);
+    }, [getMetrics, pushParticle, spawnImpactBurst]);
+
+    useEffect(() => {
+        resizeCanvas();
+        const canvas = canvasRef.current;
+        if (!canvas) return undefined;
+        resizeObserverRef.current = new ResizeObserver(() => resizeCanvas());
+        resizeObserverRef.current.observe(canvas);
+        return () => {
+            resizeObserverRef.current?.disconnect();
+        };
+    }, [resizeCanvas]);
+
+    useEffect(() => {
+        activeEffects.forEach((fx) => {
+            if (seenActiveRef.current.has(fx.id)) return;
+            seenActiveRef.current.add(fx.id);
+            spawnActiveEffect(fx);
+        });
+    }, [activeEffects, spawnActiveEffect]);
+
+    useEffect(() => {
+        enemyAttackEffects.forEach((fx) => {
+            if (seenEnemyRef.current.has(fx.id)) return;
+            seenEnemyRef.current.add(fx.id);
+            spawnEnemyAttack(fx);
+        });
+    }, [enemyAttackEffects, spawnEnemyAttack]);
+
+    useEffect(() => {
+        const draw = (now) => {
+            const canvas = canvasRef.current;
+            const ctx = canvas?.getContext('2d');
+            if (!canvas || !ctx) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            const freeze = Date.now() < hitStopUntil;
+            const dt = lastFrameRef.current === 0 || freeze ? 0 : Math.min(40, now - lastFrameRef.current);
+            lastFrameRef.current = now;
+            const clipPadding = 28;
+
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, rect.width, rect.height);
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(clipPadding, clipPadding, Math.max(0, rect.width - clipPadding * 2), Math.max(0, rect.height - clipPadding * 2));
+            ctx.clip();
+
+            particlesRef.current = particlesRef.current.filter((p) => now < p.born + p.ttl + 20);
+
+            for (const p of particlesRef.current) {
+                const age = Math.max(0, now - p.born);
+                if (age <= 0) continue;
+                const t = Math.min(1, age / p.ttl);
+
+                if (p.kind === 'slash') {
+                    const alpha = 1 - t;
+                    const drawLength = p.length * (0.24 + t * 1.85);
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(p.angle);
+                    ctx.translate(0, p.offset || 0);
+                    const gradient = ctx.createLinearGradient(-drawLength / 2, 0, drawLength / 2, 0);
+                    gradient.addColorStop(0, withAlpha(p.colorA, alpha));
+                    gradient.addColorStop(1, withAlpha(p.colorB, Math.max(0, alpha * 0.75)));
+                    ctx.fillStyle = gradient;
+                    ctx.shadowBlur = 40;
+                    ctx.shadowColor = p.colorB;
+                    const width = p.width * (1 - t * 0.12);
+                    ctx.beginPath();
+                    ctx.roundRect(-drawLength / 2, -width / 2, drawLength, width, width);
+                    ctx.fill();
+                    ctx.restore();
+                    continue;
+                }
+
+                if (p.kind === 'projectile') {
+                    const easedT = 1 - ((1 - t) * (1 - t) * (1 - t));
+                    const trailStart = Math.max(0, easedT - 0.18);
+                    const x = p.x0 + (p.x1 - p.x0) * easedT;
+                    const y = p.y0 + (p.y1 - p.y0) * easedT;
+                    const xTrail = p.x0 + (p.x1 - p.x0) * trailStart;
+                    const yTrail = p.y0 + (p.y1 - p.y0) * trailStart;
+                    ctx.save();
+                    const beam = ctx.createLinearGradient(xTrail, yTrail, x, y);
+                    beam.addColorStop(0, withAlpha(p.color, 0));
+                    beam.addColorStop(0.22, withAlpha(p.color, 0.85));
+                    beam.addColorStop(1, 'rgba(255,255,255,0.95)');
+                    ctx.strokeStyle = beam;
+                    ctx.lineWidth = Math.max(7, p.width / 2.05);
+                    ctx.shadowBlur = p.glow;
+                    ctx.shadowColor = p.color;
+                    ctx.beginPath();
+                    ctx.moveTo(xTrail, yTrail);
+                    ctx.lineTo(x, y);
+                    ctx.stroke();
+                    ctx.fillStyle = 'rgba(255,255,255,0.98)';
+                    ctx.beginPath();
+                    ctx.arc(x, y, Math.max(9, p.headRadius || p.width / 2), 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = withAlpha(p.color, 0.78);
+                    ctx.beginPath();
+                    ctx.arc(x, y, Math.max(20, (p.headRadius || p.width) * 1.4), 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                    continue;
+                }
+
+                if (p.kind === 'muzzle') {
+                    const alpha = Math.max(0, 1 - t);
+                    const flareRadius = p.radius * (0.55 + t * 0.45);
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(p.rotation || 0);
+                    ctx.fillStyle = withAlpha(p.color, alpha * 0.9);
+                    const inner = flareRadius * 0.38;
+                    const forward = p.spikeLength * (0.72 + (1 - t) * 0.28);
+                    const side = flareRadius * 1.2;
+                    const spikes = [-0.52, -0.3, -0.08, 0.08, 0.3, 0.52];
+                    spikes.forEach((offset, idx) => {
+                        const tipY = -forward * (1 - Math.abs(offset) * 0.35) * (idx % 2 === 0 ? 1.06 : 0.9);
+                        const tipX = side * offset;
+                        ctx.beginPath();
+                        ctx.moveTo(-inner * 0.4, inner * 0.25);
+                        ctx.lineTo(tipX, tipY);
+                        ctx.lineTo(inner * 0.4, inner * 0.25);
+                        ctx.closePath();
+                        ctx.fill();
+                    });
+                    const radial = ctx.createRadialGradient(0, -flareRadius * 0.18, 0, 0, -flareRadius * 0.18, flareRadius * 1.15);
+                    radial.addColorStop(0, 'rgba(255,255,220,0.98)');
+                    radial.addColorStop(0.35, withAlpha(p.color, alpha));
+                    radial.addColorStop(1, withAlpha(p.color, 0));
+                    ctx.fillStyle = radial;
+                    ctx.shadowBlur = 30;
+                    ctx.shadowColor = p.color;
+                    ctx.beginPath();
+                    ctx.ellipse(0, -flareRadius * 0.16, flareRadius * 0.85, flareRadius * 1.25, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                    continue;
+                }
+
+                if (p.kind === 'ring') {
+                    ctx.save();
+                    ctx.strokeStyle = withAlpha(p.color, Math.max(0, 0.9 - t * 0.9));
+                    ctx.lineWidth = Math.max(2, p.lineWidth * (1 - t * 0.28));
+                    ctx.setLineDash(p.dashed ? [8, 10] : []);
+                    ctx.shadowBlur = p.dashed ? 16 : 32;
+                    ctx.shadowColor = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.radius * (0.45 + t * 0.95), 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                    continue;
+                }
+
+                if (p.kind === 'coreFlash') {
+                    const alpha = Math.max(0, 0.8 - t * 0.8);
+                    const radius = p.radius * (0.5 + t * 1.3);
+                    const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
+                    gradient.addColorStop(0, 'rgba(255,255,255,0.95)');
+                    gradient.addColorStop(0.35, withAlpha(p.color, alpha));
+                    gradient.addColorStop(1, withAlpha(p.color, 0));
+                    ctx.save();
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                    continue;
+                }
+
+                if (p.kind === 'spark') {
+                    if (!freeze) {
+                        const velocityFactor = Math.max(0.16, 1 - t * (p.damping || 2.8) * 0.28);
+                        p.x += (p.vx * velocityFactor * dt) / 1000;
+                        p.y += (p.vy * velocityFactor * dt) / 1000;
+                    }
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(Math.atan2(p.vy, p.vx));
+                    ctx.strokeStyle = withAlpha(p.color, Math.max(0, 0.95 - t));
+                    ctx.lineWidth = p.width * (1 - t * 0.24);
+                    ctx.shadowBlur = 18;
+                    ctx.shadowColor = p.color;
+                    ctx.beginPath();
+                    ctx.moveTo(-p.length * (1 - t * 0.22), 0);
+                    ctx.lineTo(p.length * 0.34, 0);
+                    ctx.stroke();
+                    ctx.restore();
+                    continue;
+                }
+
+                if (p.kind === 'enemySlash') {
+                    const alpha = Math.max(0, 0.3 - t * 0.3);
+                    ctx.save();
+                    ctx.fillStyle = `rgba(255,48,48,${alpha})`;
+                    ctx.fillRect(0, 0, p.width, p.height);
+                    ctx.translate(p.width / 2, p.height * 0.56);
+                    ctx.rotate((-18 * Math.PI) / 180);
+                    const slashGradient = ctx.createLinearGradient(-p.width * 0.65, 0, p.width * 0.65, 0);
+                    slashGradient.addColorStop(0, 'rgba(255,120,120,0)');
+                    slashGradient.addColorStop(0.5, `rgba(255,80,80,${Math.max(0, 0.9 - t * 0.9)})`);
+                    slashGradient.addColorStop(1, 'rgba(255,120,120,0)');
+                    ctx.fillStyle = slashGradient;
+                    ctx.shadowBlur = 42;
+                    ctx.shadowColor = 'rgba(255,40,40,0.9)';
+                    ctx.fillRect(-p.width * 0.75, -28, p.width * 1.5, 56);
+                    ctx.restore();
+                }
+            }
+
+            ctx.restore();
+            ctx.globalCompositeOperation = 'source-over';
+            rafRef.current = requestAnimationFrame(draw);
+        };
+
+        rafRef.current = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(rafRef.current);
+    }, [hitStopUntil, withAlpha]);
+
+    return <canvas ref={canvasRef} className="absolute inset-0 z-[46] w-full h-full pointer-events-none" />;
+};
 
 const CombatTopMap = React.memo(({ runMap, nodeIndex }) => {
     const startIndex = Math.max(0, nodeIndex - 1);
@@ -480,6 +937,7 @@ export default function App() {
   const [unlockAnimId, setUnlockAnimId] = useState(null);
   const [upgradeAnimId, setUpgradeAnimId] = useState(null);
   const [frameNow, setFrameNow] = useState(0);
+  const [hitStopUntil, setHitStopUntil] = useState(0);
 
   const generateRunMap = (currentMeta) => {
       const map = [];
@@ -519,6 +977,7 @@ export default function App() {
     floatingDrops: [], deathEffect: null, runMap: [], nodeIndex: 0, activeEvent: null, eventPopup: null,
     cardDamage: {}
   });
+  const enemyCardRef = useRef(null);
 
   useEffect(() => {
      if (run && run.nodeIndex !== undefined) {
@@ -551,6 +1010,22 @@ export default function App() {
       if (card.type === 'atk' || card.type === 'def' || card.isHeal) inc = 5;
       if (card.type === 'mana' || (card.type === 'util' && !card.isHeal)) inc = 1;
       return card.value + (inc * (level - 1));
+  }, []);
+
+  const getAttackFxProfile = useCallback((card, damage = 0) => {
+    const isMelee = card && MELEE_ATTACK_IDS.has(card.id);
+    const power = Math.max(card?.cost || 0, Math.floor(damage / 20));
+    const baseAngle = ((card?.id || 'atk').split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 5) * 18 - 36;
+    return {
+      style: isMelee ? 'melee' : 'ranged',
+      colorClass: isMelee ? 'from-orange-200 via-red-300 to-white' : 'from-cyan-300 via-sky-300 to-white',
+      impactColor: isMelee ? 'rgba(248,113,113,0.7)' : 'rgba(56,189,248,0.65)',
+      slashAngles: [baseAngle - 22, baseAngle + 14 + Math.min(power * 2, 18)],
+      projectileAngle: -78 + Math.min(power * 3, 18),
+      projectileWidth: Math.min(14 + power * 4, 34),
+      impactSize: Math.min(82 + power * 14, 152),
+      hitStop: Math.max(28, Math.min(105, 24 + (card?.cost || 0) * 9 + Math.floor(damage / 24) * 4)),
+    };
   }, []);
 
   const generateMonster = useCallback((count, isBoss) => {
@@ -723,16 +1198,26 @@ export default function App() {
     });
   };
 
-  const playCard = (card) => {
+  const playCard = (card, launchOrigin = null) => {
     const cost = getEffectiveCost(card);
     if (run.mana < cost) {
       return;
     }
+    if (card.type === 'atk') {
+      let projectedDamage = card.currentValue + meta.dmgMod;
+      if (meta.heavyDmgMod > 0 && card.cost >= 3) projectedDamage += meta.heavyDmgMod;
+      if (meta.firstStrike && run.monster && run.monster.hp === run.monster.maxHp) projectedDamage *= 2;
+      if (meta.bossSlayer && run.monster && run.monster.isBoss) projectedDamage = Math.floor(projectedDamage * 1.5);
+      if (card.multiHit) projectedDamage *= (card.multiHit + (meta.multiStrike ? 1 : 0));
+      setHitStopUntil(Date.now() + getAttackFxProfile(card, projectedDamage).hitStop);
+    }
     setRun(prev => {
+      const timestamp = Date.now();
+      const attackProfile = card.type === 'atk' ? getAttackFxProfile(card, card.currentValue + meta.dmgMod) : null;
 
       let nextRun = {
         ...prev, mana: prev.mana - cost, hand: prev.hand.filter(c => c.runId !== card.runId), discard: [...prev.discard, card],
-        activeEffects: [...prev.activeEffects, { id: Math.random(), type: card.isHeal ? 'heal' : card.type, cost: card.cost, timestamp: Date.now(), cardObj: card }]
+        activeEffects: [...prev.activeEffects, { id: Math.random(), type: card.isHeal ? 'heal' : card.type, cost: card.cost, timestamp, cardObj: card, attackProfile, launchOrigin }]
       };
 
       if (meta.manaRefund && cost > 0) nextRun.mana += 1;
@@ -760,7 +1245,18 @@ export default function App() {
         
         if (meta.kineticMana && nextRun.monster) {
             nextRun.monster.hp -= 5;
-            nextRun.activeEffects.push({ id: Math.random(), type: 'atk', cost: 1, timestamp: Date.now() });
+            nextRun.activeEffects.push({
+              id: Math.random(),
+              type: 'atk',
+              cost: 1,
+              timestamp,
+              attackProfile: {
+                ...getAttackFxProfile({ id: 'kinetic', cost: 1 }, 5),
+                style: 'ranged',
+                colorClass: 'from-yellow-200 via-yellow-400 to-white',
+                impactColor: 'rgba(250,204,21,0.6)'
+              }
+            });
         }
       } else if (card.type === 'def') {
         nextRun.shield += card.currentValue + (meta.shieldBoost || 0);
@@ -851,7 +1347,7 @@ export default function App() {
 
     const tick = () => {
       const now = Date.now();
-      const dt = (now - lastUpdate.current) / 1000;
+      const dt = now < hitStopUntil ? 0 : (now - lastUpdate.current) / 1000;
       lastUpdate.current = now;
       setFrameNow(now);
 
@@ -932,7 +1428,7 @@ export default function App() {
     lastUpdate.current = Date.now();
     timerRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(timerRef.current);
-  }, [view, run.isPaused, meta.regenRate, meta.autoDrawRate, meta.autoPlayMana, meta.maxHand, meta.kineticMana, meta.manaRefund, meta.manaSurge, drawInternal, getEffectiveCost]);
+  }, [view, run.isPaused, meta.regenRate, meta.autoDrawRate, meta.autoPlayMana, meta.maxHand, meta.kineticMana, meta.manaRefund, meta.manaSurge, drawInternal, getEffectiveCost, hitStopUntil]);
 
 
   // --- Gacha & Upgrades ---
@@ -1002,8 +1498,24 @@ export default function App() {
       @keyframes window-shake-heavy { 0%, 100% { transform: translate(0, 0); filter: blur(0px); } 20% { transform: translate(-4px, -4px) rotate(-0.5deg); filter: blur(1px); } 40% { transform: translate(4px, 4px) rotate(0.5deg); filter: blur(1px); } 60% { transform: translate(-4px, 4px) rotate(-0.5deg); filter: blur(1px); } 80% { transform: translate(4px, -4px) rotate(0.5deg); filter: blur(1px); } }
       @keyframes combat-pulse-hex { 0% { transform: scale(0.8); opacity: 0.8; border-color: #3b82f6; } 100% { transform: scale(2); opacity: 0; border-color: transparent; } }
       @keyframes combat-mana-up { 0% { transform: translateY(20px) scale(1); opacity: 1; } 100% { transform: translateY(-100px) scale(0.5); opacity: 0; } }
+      @keyframes mana-counter-pop { 0% { transform: scale(1); filter: brightness(1); } 35% { transform: scale(1.22); filter: brightness(1.45); } 100% { transform: scale(1); filter: brightness(1); } }
+      @keyframes mana-charge-core { 0% { transform: translate(-50%, 0) scale(0.55); opacity: 0.8; } 45% { opacity: 1; } 100% { transform: translate(-50%, -8px) scale(1.35); opacity: 0; } }
+      @keyframes mana-counter-glow { 0% { opacity: 0; transform: scale(0.8); } 30% { opacity: 0.9; } 100% { opacity: 0; transform: scale(1.45); } }
+      @keyframes mana-gather-particle {
+        0% { transform: translate(var(--mana-start-x), var(--mana-start-y)) rotate(var(--mana-rot-start)) scaleX(0.35) scaleY(0.55); opacity: 0; }
+        10% { opacity: 1; }
+        58% { transform: translate(var(--mana-mid-x), var(--mana-mid-y)) rotate(var(--mana-rot-mid)) scaleX(1) scaleY(1); opacity: 1; }
+        100% { transform: translate(0px, 0px) rotate(var(--mana-rot-end)) scaleX(0.16) scaleY(0.42); opacity: 0; }
+      }
       @keyframes combat-vortex { 0% { transform: rotate(0deg) scale(0.5); opacity: 1; } 100% { transform: rotate(360deg) scale(1.5); opacity: 0; } }
-      @keyframes card-zoom-attack { 0% { transform: scale(1) translateY(50px); opacity: 1; } 100% { transform: scale(1.8) translateY(-80px); opacity: 0; } }
+      @keyframes card-launch { 0% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 18% { transform: translate(-50%, calc(-50% - 112px)) scale(1.02); opacity: 1; } 100% { transform: translate(-50%, calc(-50% - 190px)) scale(0.8); opacity: 0; } }
+      @keyframes card-disintegrate { 0% { filter: brightness(1); clip-path: inset(0 0 0 0); } 55% { filter: brightness(1.2); } 100% { filter: brightness(1.8) blur(4px); clip-path: inset(0 0 100% 0); } }
+      @keyframes card-spark-rise { 0% { transform: translate(0, 0) scale(0.25); opacity: 0; } 18% { opacity: 1; } 100% { transform: translate(var(--spark-x), calc(var(--spark-y) - 62px)) scale(0.95); opacity: 0; } }
+      @keyframes attack-flash { 0% { opacity: 0; transform: scale(0.74); } 18% { opacity: 0.9; transform: scale(0.98); } 100% { opacity: 0; transform: scale(1.12); } }
+      @keyframes projectile-shot { 0% { transform: translate(-50%, 20px) rotate(var(--shot-angle)) scaleX(0.45); opacity: 0; } 18% { opacity: 1; } 100% { transform: translate(-50%, -78px) rotate(var(--shot-angle)) scaleX(1); opacity: 0; } }
+      @keyframes impact-ring { 0% { opacity: 0; transform: scale(0.72); } 18% { opacity: 0.85; } 100% { opacity: 0; transform: scale(1.18); } }
+      @keyframes impact-spark { 0% { transform: rotate(var(--spark-rot)) translateX(0) scale(0.2); opacity: 0; } 18% { opacity: 1; } 100% { transform: rotate(var(--spark-rot)) translateX(var(--spark-dist)) scale(1); opacity: 0; } }
+      @keyframes card-trail { 0% { opacity: 0; transform: translate(-50%, 10px) scaleY(0.3); } 25% { opacity: 0.55; } 100% { opacity: 0; transform: translate(-50%, -120px) scaleY(1); } }
       @keyframes foil-rare { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
       @keyframes foil-legendary { 0% { background-position: 0% 50%; filter: hue-rotate(0deg); } 50% { background-position: 100% 50%; filter: hue-rotate(180deg); } 100% { background-position: 0% 50%; filter: hue-rotate(360deg); } }
       @keyframes enemy-slash { 0% { transform: scaleX(0) rotate(45deg); opacity: 1; } 50% { transform: scaleX(3) rotate(45deg); opacity: 1; } 100% { transform: scaleX(3) rotate(45deg); opacity: 0; } }
@@ -1014,17 +1526,17 @@ export default function App() {
       @keyframes unlockFlare { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(2.5); opacity: 0; } }
       @keyframes enemy-death { 0% { filter: brightness(1) blur(0px); transform: scale(1); } 50% { filter: brightness(2) blur(5px); transform: scale(1.2); opacity: 1; } 100% { filter: brightness(0) blur(10px); transform: scale(1.5); opacity: 0; } }
       @keyframes rare-reveal { 
-          0% { box-shadow: 0 0 0px rgba(234,179,8,0); transform: scale(0.8); } 
-          30% { box-shadow: 0 0 40px rgba(234,179,8,0.8), 0 0 80px rgba(234,179,8,0.4); transform: scale(1.08); }
-          60% { box-shadow: 0 0 20px rgba(234,179,8,0.6); transform: scale(1.0); }
-          100% { box-shadow: 0 0 15px rgba(234,179,8,0.3); transform: scale(1.0); } 
+          0% { opacity: 0; box-shadow: 0 0 0px rgba(234,179,8,0); transform: scale(0.8); filter: brightness(1.7); } 
+          30% { opacity: 1; box-shadow: 0 0 40px rgba(234,179,8,0.8), 0 0 80px rgba(234,179,8,0.4); transform: scale(1.08); }
+          60% { opacity: 1; box-shadow: 0 0 20px rgba(234,179,8,0.6); transform: scale(1.0); }
+          100% { opacity: 1; box-shadow: 0 0 15px rgba(234,179,8,0.3); transform: scale(1.0); filter: brightness(1); } 
       }
       @keyframes legendary-reveal { 
-          0% { box-shadow: 0 0 0px rgba(168,85,247,0); transform: scale(0.5) rotate(-5deg); filter: brightness(3); } 
-          20% { box-shadow: 0 0 60px rgba(168,85,247,1), 0 0 120px rgba(234,179,8,0.8), 0 0 200px rgba(239,68,68,0.4); transform: scale(1.15) rotate(2deg); filter: brightness(2); }
-          50% { box-shadow: 0 0 40px rgba(168,85,247,0.8), 0 0 80px rgba(234,179,8,0.5); transform: scale(0.98) rotate(-1deg); filter: brightness(1.2); }
-          70% { transform: scale(1.05) rotate(0deg); filter: brightness(1); }
-          100% { box-shadow: 0 0 25px rgba(168,85,247,0.4), 0 0 50px rgba(234,179,8,0.2); transform: scale(1.0) rotate(0deg); filter: brightness(1); } 
+          0% { opacity: 0; box-shadow: 0 0 0px rgba(168,85,247,0); transform: scale(0.5) rotate(-5deg); filter: brightness(3); } 
+          20% { opacity: 1; box-shadow: 0 0 60px rgba(168,85,247,1), 0 0 120px rgba(234,179,8,0.8), 0 0 200px rgba(239,68,68,0.4); transform: scale(1.15) rotate(2deg); filter: brightness(2); }
+          50% { opacity: 1; box-shadow: 0 0 40px rgba(168,85,247,0.8), 0 0 80px rgba(234,179,8,0.5); transform: scale(0.98) rotate(-1deg); filter: brightness(1.2); }
+          70% { opacity: 1; transform: scale(1.05) rotate(0deg); filter: brightness(1); }
+          100% { opacity: 1; box-shadow: 0 0 25px rgba(168,85,247,0.4), 0 0 50px rgba(234,179,8,0.2); transform: scale(1.0) rotate(0deg); filter: brightness(1); } 
       }
       @keyframes legendary-flash { 
           0% { opacity: 0; } 
@@ -1154,6 +1666,9 @@ export default function App() {
     const currentMapNode = run.runMap[run.nodeIndex];
     const isCombatNode = currentMapNode && (currentMapNode.type === 'encounter' || currentMapNode.type === 'boss');
     const renderTimestamp = frameNow;
+    const isHitStopActive = renderTimestamp < hitStopUntil;
+    const manaFx = run.activeEffects.filter(e => e.type === 'mana');
+    const hasManaFx = manaFx.length > 0;
 
     let monsterTimerPercent = 0;
     let timeLeft = "0.0";
@@ -1178,7 +1693,7 @@ export default function App() {
     const shakeClass = shakeLevel === 2 ? 'animate-[window-shake-heavy_0.3s_ease-in-out_infinite]' : shakeLevel === 1 ? 'animate-[window-shake-small_0.15s_ease-in-out_infinite]' : '';
 
     return (
-      <div className={`flex flex-col h-full bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-slate-800 via-slate-950 to-black text-white overflow-hidden relative border-x-0 sm:border-x-[6px] border-black shadow-[inset_0_0_50px_rgba(0,255,255,0.05)] font-tech ${shakeClass}`}>
+      <div className={`flex flex-col h-full bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-slate-800 via-slate-950 to-black text-white overflow-hidden relative border-x-0 sm:border-x-[6px] border-black shadow-[inset_0_0_50px_rgba(0,255,255,0.05)] font-tech ${shakeClass} ${isHitStopActive ? 'scale-[1.01] brightness-110' : ''}`}>
         <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.03)_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none" />
         
         {run.eventPopup && (
@@ -1234,6 +1749,14 @@ export default function App() {
 
         {/* --- MAIN ARENA --- */}
         <div className="flex-grow flex flex-col items-center justify-start pt-6 sm:pt-10 relative z-10 overflow-hidden transform scale-90 sm:scale-100">
+           {(!run.activeEvent || isCombatNode) && (
+               <CombatVfxCanvas
+                   activeEffects={run.activeEffects}
+                   enemyAttackEffects={run.enemyAttackEffects || []}
+                   hitStopUntil={hitStopUntil}
+                   enemyRef={enemyCardRef}
+               />
+           )}
            
            {isCombatNode && run.monster && (
                <div className="absolute w-full flex justify-center z-30 px-4">
@@ -1289,37 +1812,10 @@ export default function App() {
            {(!run.activeEvent || isCombatNode) && (
            <div className="absolute inset-0 pointer-events-none z-50 overflow-hidden flex items-center justify-center mt-12">
                {run.activeEffects.map(fx => {
-                   if (fx.type === 'atk') {
-                       return (
-                           <div key={fx.id} className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                               <div className={`h-4 bg-white shadow-[0_0_20px_white] w-full absolute animate-[combat-slash_0.2s_ease-out_forwards] ${fx.cost >= 3 ? 'h-16 bg-red-400 shadow-[0_0_40px_red]' : ''}`} />
-                               {fx.cost >= 3 && <div className="h-16 bg-red-400 shadow-[0_0_40px_red] w-full absolute animate-[combat-slash_0.25s_ease-out_forwards] delay-75" style={{ transform: 'scaleX(0) rotate(45deg)' }} />}
-                           </div>
-                       );
-                   }
-                   if (fx.type === 'def') return <div key={fx.id} className="absolute w-64 h-64 border-[8px] border-blue-500 rounded-full animate-[combat-pulse-hex_0.4s_ease-out_forwards] pointer-events-none" />;
-                   if (fx.type === 'util') return <div key={fx.id} className="absolute w-48 h-48 border-[12px] border-cyan-400 border-dashed rounded-full animate-[combat-vortex_0.5s_ease-in-out_forwards] pointer-events-none" />;
-                   if (fx.type === 'heal') return <div key={fx.id} className="absolute w-64 h-64 border-[8px] border-green-500 rounded-full animate-[combat-pulse-hex_0.4s_ease-out_forwards] pointer-events-none" />;
+                   if (fx.type === 'atk' || fx.type === 'def' || fx.type === 'util' || fx.type === 'heal') return null;
                    return null;
                })}
 
-               {/* Ghost Card Projectiles */}
-               {run.activeEffects.map(fx => (
-                   fx.cardObj ? (
-                       <div key={`ghost-${fx.id}`} className="absolute inset-0 flex items-center justify-center animate-[card-zoom-attack_0.35s_ease-out_forwards] z-50 pointer-events-none">
-                          <Card overrideCard={fx.cardObj} scale={1.2} level={fx.cardObj.currentLevel} overrideValue={fx.cardObj.currentValue} />
-                       </div>
-                   ) : null
-               ))}
-               
-               {/* Enemy Attack Screen Flash & Slash */}
-               {run.enemyAttackEffects && run.enemyAttackEffects.map(fx => (
-                   <div key={fx.id} className="absolute inset-0 flex items-center justify-center pointer-events-none z-50">
-                       <div className="h-24 bg-red-600 shadow-[0_0_50px_red] w-full absolute animate-[enemy-slash_0.3s_ease-out_forwards]" />
-                       <div className="absolute inset-0 bg-red-500/20 animate-ping pointer-events-none" />
-                   </div>
-               ))}
-               
                {/* Floating Loot Drops */}
                {run.floatingDrops && run.floatingDrops.map(drop => {
                     let color = 'text-yellow-400';
@@ -1373,7 +1869,7 @@ export default function App() {
                    <div className={`relative group transition-transform duration-100 z-10 ${isMonsterAttacking ? 'translate-y-8 scale-110' : ''}`}>
                       <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-48 h-12 bg-cyan-900/40 rounded-[100%] border border-cyan-500/30 shadow-[0_0_30px_rgba(0,255,255,0.2)]" />
                       
-                      <div className={`w-44 h-60 rounded-sm bg-gradient-to-br ${run.monster.isBoss ? 'from-red-950 to-black border-red-500 shadow-[0_0_50px_rgba(255,0,0,0.4)]' : 'from-slate-800 to-slate-900 border-cyan-400/50 shadow-[0_0_30px_rgba(0,255,255,0.2)]'} border-2 flex flex-col items-center justify-center relative overflow-hidden transform group-hover:scale-105 group-hover:-translate-y-2 transition-transform duration-500 ${isMonsterDying ? 'animate-[enemy-death_0.5s_ease-out_forwards]' : ''}`}>
+                      <div ref={enemyCardRef} className={`w-44 h-60 rounded-sm bg-gradient-to-br ${run.monster.isBoss ? 'from-red-950 to-black border-red-500 shadow-[0_0_50px_rgba(255,0,0,0.4)]' : 'from-slate-800 to-slate-900 border-cyan-400/50 shadow-[0_0_30px_rgba(0,255,255,0.2)]'} border-2 flex flex-col items-center justify-center relative overflow-hidden transform group-hover:scale-105 group-hover:-translate-y-2 transition-transform duration-500 ${isMonsterDying ? 'animate-[enemy-death_0.5s_ease-out_forwards]' : ''} ${isHitStopActive ? 'scale-110 brightness-125' : ''}`}>
                           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:100%_4px] pointer-events-none" />
                           <MonsterIcon size={80} className={`${run.monster.isBoss ? 'text-red-400' : 'text-cyan-400'} drop-shadow-[0_0_15px_currentColor]`} />
                       </div>
@@ -1411,11 +1907,74 @@ export default function App() {
                               </div>
                           ) : <div />}
                           <div className="flex items-center gap-2 relative">
-                              {run.activeEffects.filter(e => e.type === 'mana').map(fx => (
-                                  <div key={fx.id} className="absolute left-1/2 bottom-full -translate-x-1/2 text-green-400 font-black text-xl animate-[combat-mana-up_0.5s_ease-out_forwards]">+</div>
-                              ))}
-                              <Zap className="text-yellow-400 fill-yellow-400" size={16} />
-                              <span className="font-mono text-xl font-black text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]">{Math.floor(run.mana)} MP</span>
+                              <div className={`flex items-center gap-2 ${hasManaFx ? 'animate-[mana-counter-pop_0.35s_ease-out]' : ''}`}>
+                                  <div className="relative flex items-center justify-center">
+                                      {manaFx.map(fx => (
+                                          <React.Fragment key={fx.id}>
+                                              <div className="absolute left-1/2 top-1/2 w-52 h-52 -translate-x-1/2 -translate-y-1/2 pointer-events-none overflow-visible">
+                                          <svg viewBox="0 0 240 240" className="absolute inset-0 overflow-visible">
+                                              <defs>
+                                                  <filter id={`mana-glow-${fx.id}`} x="-80%" y="-80%" width="260%" height="260%">
+                                                      <feGaussianBlur stdDeviation="2.6" result="blur" />
+                                                      <feMerge>
+                                                          <feMergeNode in="blur" />
+                                                          <feMergeNode in="SourceGraphic" />
+                                                      </feMerge>
+                                                  </filter>
+                                              </defs>
+                                              <circle cx="120" cy="120" r="10" fill="rgba(250,204,21,0.65)">
+                                                  <animate attributeName="r" values="8;18" dur="0.58s" begin="0s" fill="freeze" />
+                                                  <animate attributeName="opacity" values="0.85;0" dur="0.58s" begin="0s" fill="freeze" />
+                                              </circle>
+                                              <circle cx="120" cy="120" r="18" stroke="rgba(250,204,21,0.4)" strokeWidth="1.5" fill="none">
+                                                  <animate attributeName="r" values="12;30" dur="0.58s" begin="0s" fill="freeze" />
+                                                  <animate attributeName="opacity" values="0.9;0" dur="0.58s" begin="0s" fill="freeze" />
+                                              </circle>
+                                              {[
+                                                  'M 36 118 C 40 80, 72 46, 120 74 C 146 90, 138 110, 120 120',
+                                                  'M 50 60 C 78 28, 128 24, 150 58 C 162 82, 138 104, 120 120',
+                                                  'M 96 34 C 138 24, 168 40, 168 74 C 166 94, 142 108, 120 120',
+                                                  'M 144 34 C 186 44, 202 76, 176 100 C 156 116, 132 120, 120 120',
+                                                  'M 186 62 C 198 100, 182 128, 152 132 C 134 132, 124 126, 120 120',
+                                                  'M 192 116 C 174 150, 140 164, 124 144 C 116 134, 116 126, 120 120',
+                                                  'M 156 164 C 126 176, 88 170, 82 142 C 84 130, 100 124, 120 120',
+                                                  'M 100 182 C 60 180, 34 150, 48 124 C 62 112, 88 112, 120 120',
+                                                  'M 44 158 C 16 132, 18 90, 48 76 C 78 72, 102 92, 120 120',
+                                                  'M 26 106 C 28 64, 58 36, 92 48 C 116 58, 124 90, 120 120',
+                                              ].map((pathD, idx) => (
+                                                  <g key={`mana-spiral-${fx.id}-${idx}`} filter={`url(#mana-glow-${fx.id})`}>
+                                                      {[0.14, 0.09, 0.04].map((delay, trailIdx) => (
+                                                          <g key={`mana-wisp-${fx.id}-${idx}-${trailIdx}`} opacity="0">
+                                                              <ellipse
+                                                                  cx="0"
+                                                                  cy="0"
+                                                                  rx={trailIdx === 0 ? 20 : trailIdx === 1 ? 14 : 9}
+                                                                  ry={trailIdx === 0 ? 1.5 : trailIdx === 1 ? 1.25 : 1}
+                                                                  fill={trailIdx === 0 ? 'rgba(250,204,21,0.26)' : trailIdx === 1 ? 'rgba(250,204,21,0.48)' : 'rgba(255,255,255,0.95)'}
+                                                              />
+                                                              <animateMotion
+                                                                  dur={`${0.58 - delay}s`}
+                                                                  begin={`${delay}s`}
+                                                                  fill="freeze"
+                                                                  rotate="auto"
+                                                                  path={pathD}
+                                                              />
+                                                              <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.08;0.9;1" dur={`${0.58 - delay}s`} begin={`${delay}s`} fill="freeze" />
+                                                          </g>
+                                                      ))}
+                                                  </g>
+                                              ))}
+                                          </svg>
+                                              </div>
+                                              <div className="absolute left-1/2 bottom-full -translate-x-1/2 text-green-300 font-black text-2xl drop-shadow-[0_0_10px_rgba(74,222,128,0.85)] animate-[combat-mana-up_0.45s_ease-out_forwards]">
+                                                  +{fx.cardObj?.currentValue || 1}
+                                              </div>
+                                          </React.Fragment>
+                                      ))}
+                                      <Zap className="text-yellow-400 fill-yellow-400" size={16} />
+                                  </div>
+                                  <span className="font-mono text-xl font-black text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]">{Math.floor(run.mana)} MP</span>
+                              </div>
                           </div>
                       </div>
                   }
@@ -2030,7 +2589,7 @@ export default function App() {
                                                   />
                                               )}
                                               <div 
-                                                  className={`transform origin-center ${revealClass}`} 
+                                                  className={`transform origin-center relative z-10 ${revealClass}`} 
                                                   style={{ animationDelay: `${globalIdx * 0.12}s` }}
                                               >
                                                   <Card cardId={card.id} scale={packCount > 1 ? 0.9 : 1.1} level={getCardLevel(card.id)} overrideValue={getCardValue(card, getCardLevel(card.id))} />
@@ -2211,6 +2770,34 @@ export default function App() {
       {view === 'codex' && renderCodex()}
       {view === 'gacha' && renderGacha()}
       {view === 'gameover' && renderGameOver()}
+      <div className="fixed inset-0 pointer-events-none z-[200]">
+        {run.activeEffects.map(fx => (
+          fx.cardObj && fx.launchOrigin ? (
+            <div
+              key={`global-ghost-${fx.id}`}
+              className="fixed pointer-events-none animate-[card-launch_0.36s_cubic-bezier(0.05,0.7,0.2,1)_forwards]"
+              style={{ left: `${fx.launchOrigin.x}px`, top: `${fx.launchOrigin.y}px` }}
+            >
+              <div className="relative animate-[card-disintegrate_0.36s_linear_forwards]">
+                <Card
+                  overrideCard={fx.cardObj}
+                  pixelWidth={fx.launchOrigin.width || 128}
+                  pixelHeight={fx.launchOrigin.height || 192}
+                  level={fx.cardObj.currentLevel}
+                  overrideValue={fx.cardObj.currentValue}
+                />
+                {[...Array(8)].map((_, idx) => (
+                  <div
+                    key={`global-ghost-${fx.id}-spark-${idx}`}
+                    className="absolute left-1/2 top-1/2 w-2 h-2 rounded-full bg-white shadow-[0_0_12px_rgba(255,255,255,0.8)] animate-[card-spark-rise_0.36s_ease-out_forwards]"
+                    style={{ '--spark-x': `${(idx - 3.5) * 14}px`, '--spark-y': `${-20 - (idx % 3) * 12}px`, animationDelay: `${idx * 20}ms` }}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null
+        ))}
+      </div>
     </div>
   );
 }
