@@ -503,3 +503,66 @@ Priority order:
 ## 19. Design Summary
 
 Codex Idle TCG is a real-time idle deckbuilder about turning pressure into momentum. The player begins with a small, clunky deck and gradually builds a faster, stronger, more automated engine through permanent skill unlocks, collection growth, duplicate upgrades, and deck refinement. The game should remain an idle-action deckbuilder first, with future depth coming from a large amount of content and variety rather than from becoming a rules-dense traditional TCG. The current build already establishes the core identity: timer-based combat, manual card sequencing, linear run progression, long-form power escalation, and a strong spectacle-driven cyber presentation. Future development should emphasize broader content, later color-system depth, reduced healing dependence, and major progression milestones that feel powerful enough to redefine how the game is played.
+
+## 20. Current Implementation Notes
+
+This section is intended as a living bridge between the design direction and the current playable build.
+
+### Current Focus
+
+The recent development focus has been combat readability, impact, and presentation polish rather than adding new macro systems. The game already contains enough core structure to validate the loop, so current iteration is centered on:
+
+- making attacks feel punchier
+- improving resource feedback
+- making defensive and healing actions easier to read
+- making card flow between deck, hand, and play area feel more tactile
+
+### Recent Combat And HUD Polish
+
+The current implementation now includes:
+
+- stronger melee slash VFX with varied slash direction
+- faster, punchier ranged projectile effects
+- hit stop that scales with stronger attacks
+- mana gain effects that gather into the MP counter
+- delayed HP damage and healing bar transitions
+- a large curved hex barrier wall for shield cards
+- a block overlay directly on the player HP bar
+- deck-linked draw-card effects with ghost-card flight and arrival pulse
+
+These additions reinforce the game's intended identity as a spectacle-driven idle-action deckbuilder where even routine card plays should feel satisfying.
+
+### Current Draw Effect Status
+
+The deck-to-hand draw effect is partly complete and already much stronger than the earlier version.
+
+Working pieces:
+
+- deck-origin pulse and draw initiation feedback
+- visible ghost card traveling toward the hand
+- hand-slot landing pulse at the correct destination
+- interaction protection so animated ghost cards do not block hand input
+
+Open issue:
+
+- the initial cyan hologram frame rendered around the moving draw ghost is still visually misaligned during flight
+
+This is currently the main outstanding presentation bug.
+
+### Near-Term Recommendation
+
+Before expanding into more systems, the next iteration should finish stabilizing the draw-card presentation. Once that effect is fully aligned and reliable, the project can continue polishing:
+
+- draw and discard readability
+- additional card-category-specific VFX
+- event presentation and reward feedback
+- more cards, enemies, bosses, and dungeon content
+
+### Production Reminder
+
+The project still prioritizes content breadth over deeper systemic complexity. New development should continue respecting the main direction:
+
+- keep the game in the idle-action deckbuilder space
+- preserve the mostly linear run structure for now
+- add more content variety first
+- reserve major systemic expansion for later milestones where it can feel truly game-changing

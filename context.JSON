@@ -1,1 +1,198 @@
-{"project":"Codex Idle TCG","stack":["React","TailwindCSS","lucide-react"],"architecture":{"root":"Single monolithic App component. ALL sub-components (Card, CombatStatusPanel, CombatTopMap) and render functions (renderMenu, renderCombat, etc.) MUST remain inside the App function to share state scope and prevent React child/re-render crashes."},"state_management":{"meta":{"desc":"Persistent localStorage save data","keys":["gp","fragments","packs","unlockedSkillsFeature","unlockedShopFeature","maxHand","openingHand","startMana","regenRate","dmgMod","heavyDmgMod","shieldBoost","healBoost","manaRetain","drawMulti","startWithManaCard","overkill","overkillChain","freeLowCost","freeUtil","autoDrawRate","autoPlayMana","manaSurge","manaRefund","kineticMana","firstStrike","bossSlayer","heavyArmor","drawOnAtk","multiStrike","unlockedSkills","collection","cardLevels","activeDeck"]},"run":{"desc":"Ephemeral combat/map state","keys":["hp","maxHp","shield","mana","kills","gpEarned","fragsEarned","packsEarned","deck","hand","discard","monster","isPaused","autoDrawTimer","activeEffects","enemyAttackEffects","floatingDrops","deathEffect","runMap","nodeIndex","activeEvent","eventPopup"]}},"databases":{"CARD_DB":{"types":["atk","def","mana","util","heal"],"colors":{"W":"Neutral","G":"Nature","B":"Water","R":"Fire","D":"Void (High pwr, uses isSelfDamage prop)","Y":"Lightning (Low pwr, uses drawBonus prop)"},"structure":"{ id, name, type, cost, color, value, desc (uses [VAL] replacement), icon (Lucide component) }"},"SKILL_TREE_DICT":{"desc":"Node definitions with costs, dependencies, and mutation functions for meta state","branches":["core","sys","flow","dmg","util","cross"],"mechanics":["Limit Break","Overcharge","Overkill Chain","Passive Flow","Echo Casting"]}},"core_mechanics":{"combat_loop":{"engine":"requestAnimationFrame (dt calculation)","features":["Monster timer ticks up, deals damage when reaching maxTimer","Player mana regens based on meta.regenRate","autoDraw and autoPlayMana logic executes here","activeEffects, enemyAttackEffects, and floatingDrops filtered by timestamp for CSS animations"]},"card_play":{"logic":"Deduct cost -> apply value+mods -> check monster HP. If monster dies -> calculate overkill -> award GP/Frags/Packs -> trigger deathEffect -> advance runMap nodeIndex. If next node is event, pause combat loop and set activeEvent."},"progression_map":{"generation":"Array of 1000 nodes. Boss every 5th. 5% Treasure, 5% Rest. Fixed unlocks at index 2 (Skills) and 4 (Shop). Default Encounter.","ui":"Sliding horizontal timeline (CombatTopMap) dynamically sliced to show only nodeIndex -5 to +15 to prevent DOM lag."},"events":{"interaction":"In-arena holographic sprite (Tent, Package, Key). Fully clickable hitbox. Combat paused. Cards in hand are unplayable (but can be drawn/discarded).","resolution":"Click triggers triggerEventRewards -> spawns targeted loot fountain -> sets eventPopup data. Clicking popup button triggers closeEventPopup -> applies meta unlocks -> advances nodeIndex -> spawns next monster."}},"visual_design":{"cards":{"body":"bg-slate-900 with inner bg-slate-800","border":"Outer padding uses thick gradient based on type/color (CARD_BGS). Red=Atk, Green=Mana, Purple=Util, Blue=Def, Pink=Heal, Black/Purple=Void, Yellow=Lightning.","foil":"CSS gradient animations based on rarity (cost >=4 is legendary, 2-3 is rare)."},"hud":{"style":"Unified Player/Enemy panels. Black/80 backdrop-blur, distinct cyan/red borders. Enemy intent bubble pinned to right side of sprite."},"animations":{"css_keyframes":["combat-slash","window-shake-small/heavy (strictly disabled on event nodes)","combat-pulse-hex","combat-mana-up","combat-vortex","enemy-slash","eva-scroll (warning stripes)","loot-fountain"],"loot_fountain":"Dynamically spawns multiple Lucide icons (Coins, Layers, Package) mapping to reward type, plus a single text element. Uses --drop-x CSS var for randomized arcing trajectories. z-index 60 to overlay everything."}},"strict_constraints":["Do NOT use external image URLs. Use lucide-react icons only (Valid: Bug, Ghost, Bot, Eye, Skull, Target, Crown, Flame, Zap, Hexagon, Tent, Key, Package).","Do NOT extract sub-components outside the main App() function.","Maintain strict conditional rendering for the eventPopup to ensure combat loop fully pauses.","Do NOT use `npx tailwindcss init`. Local environments must use manual tailwind.config.js creation."]}
+{
+  "project": "Codex Idle TCG",
+  "genre": "Idle-action deckbuilder / real-time card battler / meta-progression collection game",
+  "product_direction": {
+    "identity": "Stay firmly in the idle-action deckbuilder space rather than becoming a traditional dense TCG simulator.",
+    "run_structure": "Mostly linear for now, with more dungeons and content routes later.",
+    "progression_goal": "Break typical TCG-like rules piece by piece through major upgrades and automation unlocks.",
+    "content_priority": "Prioritize content breadth and variety first, deeper systems second.",
+    "power_curve": "Fast satisfying power climb with a large amount of long-term content."
+  },
+  "stack": [
+    "React",
+    "Vite",
+    "TailwindCSS",
+    "lucide-react"
+  ],
+  "architecture": {
+    "root": "Single monolithic App component. ALL gameplay sub-components (Card, CombatStatusPanel, CombatTopMap) and render functions (renderMenu, renderCombat, etc.) MUST remain inside the App function to share state scope and avoid rendering/state bugs.",
+    "asset_paths": "Static assets and CSV files should be resolved via import.meta.env.BASE_URL. Use getAssetPath() when loading from public/ for GitHub Pages compatibility."
+  },
+  "state_management": {
+    "meta": {
+      "desc": "Persistent localStorage save data",
+      "keys": [
+        "gp",
+        "fragments",
+        "packs",
+        "unlockedSkillsFeature",
+        "unlockedShopFeature",
+        "maxHand",
+        "openingHand",
+        "startMana",
+        "regenRate",
+        "dmgMod",
+        "heavyDmgMod",
+        "shieldBoost",
+        "healBoost",
+        "manaRetain",
+        "drawMulti",
+        "startWithManaCard",
+        "overkill",
+        "overkillChain",
+        "freeLowCost",
+        "freeUtil",
+        "autoDrawRate",
+        "autoPlayMana",
+        "manaSurge",
+        "manaRefund",
+        "kineticMana",
+        "firstStrike",
+        "bossSlayer",
+        "heavyArmor",
+        "drawOnAtk",
+        "multiStrike",
+        "unlockedSkills",
+        "collection",
+        "cardLevels",
+        "activeDeck"
+      ]
+    },
+    "run": {
+      "desc": "Ephemeral combat/map state",
+      "keys": [
+        "hp",
+        "maxHp",
+        "shield",
+        "mana",
+        "kills",
+        "gpEarned",
+        "fragsEarned",
+        "packsEarned",
+        "deck",
+        "hand",
+        "discard",
+        "monster",
+        "isPaused",
+        "autoDrawTimer",
+        "activeEffects",
+        "enemyAttackEffects",
+        "floatingDrops",
+        "deathEffect",
+        "runMap",
+        "nodeIndex",
+        "activeEvent",
+        "eventPopup"
+      ]
+    }
+  },
+  "databases": {
+    "CARD_DB": {
+      "types": [
+        "atk",
+        "def",
+        "mana",
+        "util",
+        "heal"
+      ],
+      "colors": {
+        "W": "Neutral",
+        "G": "Nature",
+        "B": "Water",
+        "R": "Fire",
+        "D": "Void (reserved thematic identity)",
+        "Y": "Lightning (reserved thematic identity)"
+      },
+      "structure": "{ id, name, type, cost, color, value, desc, icon, optional manaBonus/multiHit/isHeal }"
+    },
+    "SKILL_TREE_DICT": {
+      "desc": "Node definitions with costs, dependencies, and mutation functions for meta state",
+      "branches": [
+        "core",
+        "sys",
+        "flow",
+        "dmg",
+        "util",
+        "cross"
+      ],
+      "mechanics": [
+        "Limit Break",
+        "Overcharge",
+        "Overkill Chain",
+        "Passive Flow",
+        "Echo Casting"
+      ]
+    }
+  },
+  "core_mechanics": {
+    "combat_loop": {
+      "engine": "requestAnimationFrame (dt calculation)",
+      "features": [
+        "Monster timer ticks up and deals damage when reaching maxTimer",
+        "Player mana regens based on meta.regenRate",
+        "autoDraw and autoPlayMana logic executes in the combat loop",
+        "activeEffects, enemyAttackEffects, floatingDrops, and drawAnimations are time-filtered for CSS/VFX cleanup"
+      ]
+    },
+    "card_play": {
+      "logic": "Deduct cost, apply card effect, resolve damage/heal/shield/draw, award GP/Fragments/Packs on kill, then advance run-map state."
+    },
+    "progression_map": {
+      "generation": "Array of 1000 nodes. Boss every 5th combat milestone. 5% Treasure, 5% Rest. Forced unlocks at index 2 (Skills) and 4 (Shop). Default Encounter otherwise.",
+      "ui": "Sliding horizontal timeline sliced around the current node to avoid DOM lag."
+    },
+    "events": {
+      "interaction": "In-arena holographic event object. Combat pauses while the event is active.",
+      "resolution": "Claim rewards, show popup, apply unlock/reward state, then continue map progression."
+    }
+  },
+  "current_implementation_status": {
+    "working_features": [
+      "Real-time 1v1 combat",
+      "CSV-driven cards and enemies",
+      "Persistent save data",
+      "Deck editor and codex flow",
+      "Pack opening and duplicate upgrades",
+      "Skill tree progression",
+      "Map progression with events and bosses",
+      "GitHub Pages-compatible asset loading"
+    ],
+    "recent_vfx_and_ui_progress": [
+      "Varied slash directions with stronger melee impact",
+      "Faster ranged attacks with more forceful muzzle flash",
+      "Hit stop that scales with stronger attacks",
+      "Mana wisps gathering into the MP counter",
+      "Delayed damage and healing behavior on HP bars",
+      "Curved hex-panel shield wall for block cards",
+      "Block overlay integrated into the player HP bar",
+      "Deck-to-hand draw effect with deck pulse, flying ghost card, and landing pulse"
+    ]
+  },
+  "current_focus": {
+    "main_goal": "Polish combat readability, impact, and card-flow presentation before moving to larger new systems.",
+    "next_likely_task": "Finish stabilizing the draw-card effect so the moving hologram frame matches the ghost card during flight."
+  },
+  "known_issues": [
+    "The moving cyan hologram frame in the draw-card deck-to-hand animation is still visually misaligned during flight.",
+    "The landing pulse for the drawn card appears correct, so the remaining issue is specifically the in-flight frame alignment."
+  ],
+  "visual_design": {
+    "cards": {
+      "body": "Dark holographic card shell with type-colored outer frame",
+      "foil": "Rare and legendary foil treatments based on cost tiers"
+    },
+    "hud": {
+      "style": "Black/cyan cyber panels with heavy glow accents and clear combat readability"
+    },
+    "effects": {
+      "direction": "High-impact but readable, with strong feedback on attacks, mana gain, healing, block, and draw flow"
+    }
+  },
+  "strict_constraints": [
+    "Do NOT use external image URLs. Use lucide-react icons only.",
+    "Do NOT extract gameplay sub-components outside the main App() function unless absolutely necessary.",
+    "Keep event rendering and pause logic strict so combat fully pauses during active events.",
+    "Do NOT create random verification output folders under the project root. Reuse .build-check for build verification.",
+    "Do NOT use npx tailwindcss init in this project."
+  ]
+}

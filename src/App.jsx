@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
 import { 
   Trophy, Heart, Zap, Trash2, Shield, Sword, Coins, Play, 
   RotateCcw, BookOpen, Package, Layers, Plus, Minus, ArrowLeft, ArrowUpCircle,
@@ -250,7 +250,7 @@ const DEFAULT_META = {
 
 // --- Components ---
 
-const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAfford, scale = 1, inHand = false, level = 1, overrideValue, isDiscardMode = false, isAnimNew = false, isEventNode = false, pixelWidth, pixelHeight }) => {
+const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAfford, scale = 1, inHand = false, level = 1, overrideValue, isDiscardMode = false, isAnimNew = false, isEventNode = false, pixelWidth, pixelHeight, disableInteraction = false }) => {
   const card = overrideCard || CARD_DB[cardId];
   if (!card) return null;
 
@@ -292,9 +292,10 @@ const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAffor
         ${inHand ? 'md:hover:-translate-y-4 hover:shadow-[0_10px_20px_rgba(0,0,0,0.8)] z-10' : ''}
         ${(!canAfford || isEventNode) && inHand && !isDiscardMode ? 'opacity-50 grayscale hover:grayscale-0' : 'opacity-100'}
         ${isAnimNew ? 'animate-[popIn_0.3s_ease-out]' : ''}
-        flex flex-col p-[3px] bg-gradient-to-br ${outerBg} select-none border border-black group cursor-pointer overflow-hidden`}
+        flex flex-col p-[3px] bg-gradient-to-br ${outerBg} select-none border border-black group ${disableInteraction ? 'pointer-events-none' : 'cursor-pointer'} overflow-hidden`}
       style={pixelWidth && pixelHeight ? { width: `${pixelWidth}px`, height: `${pixelHeight}px` } : { width: `${8 * scale}rem`, height: `${12 * scale}rem` }}
       onClick={(e) => { 
+          if (disableInteraction) return;
           if (inHand && isDiscardMode && onDiscard) {
               onDiscard(card.runId);
           } else if (canAfford && onPlay && !isDiscardMode && !isEventNode) {
@@ -334,7 +335,7 @@ const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAffor
              <IconComponent size={32 * scale} className={`relative z-10 ${getIconColor(card)} drop-shadow-[0_0_8px_currentColor]`} />
          </div>
          
-         <div className="h-[42%] bg-[#e8deca] border border-black/40 rounded-sm p-1.5 shadow-[inset_0_0_8px_rgba(0,0,0,0.3)] text-black flex flex-col relative shrink-0 pointer-events-auto">
+         <div className={`h-[42%] bg-[#e8deca] border border-black/40 rounded-sm p-1.5 shadow-[inset_0_0_8px_rgba(0,0,0,0.3)] text-black flex flex-col relative shrink-0 ${disableInteraction ? 'pointer-events-none' : 'pointer-events-auto'}`}>
              <div className="font-black uppercase mb-1 border-b border-black/20 pb-0.5 flex justify-between tracking-tighter" style={{ fontSize: `${0.6 * scale}rem` }}>
                  <span>[{card.isHeal ? 'heal' : card.type}]</span>
                  <span className={level > 1 ? 'text-blue-700 font-bold' : ''}>{displayVal > 0 ? `PWR ${displayVal}` : ''}</span>
@@ -348,27 +349,139 @@ const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAffor
   );
 };
 
-const CombatStatusPanel = ({ isPlayer, hp, maxHp, title, showDanger, extraContent }) => (
-    <div className={`w-full max-w-sm sm:max-w-md space-y-2 relative z-30 bg-black/80 p-4 rounded-lg border ${isPlayer ? 'border-cyan-900/50' : 'border-red-900/50'} backdrop-blur-md shadow-2xl`}>
-        <div className="flex justify-between items-end px-1">
-            <div className="flex items-center gap-2">
-                <Heart className={isPlayer ? "text-cyan-500" : "text-red-500"} size={16} />
-                <span className={`${isPlayer ? "text-cyan-400" : "text-red-400"} text-xs sm:text-sm tracking-widest font-black`}>{Math.ceil(hp)} / {maxHp} HP</span>
+const CombatStatusPanel = ({ isPlayer, hp, maxHp, title, showDanger, extraContent, healPulseSignal = 0, shield = 0 }) => {
+    const [displayHp, setDisplayHp] = useState(hp);
+    const [damageGhostHp, setDamageGhostHp] = useState(hp);
+    const [healGhostHp, setHealGhostHp] = useState(hp);
+    const [isHealing, setIsHealing] = useState(false);
+    const [isTakingDamage, setIsTakingDamage] = useState(false);
+    const prevHpRef = useRef(hp);
+    const lastHealPulseRef = useRef(healPulseSignal);
+
+    useEffect(() => {
+        const prevHp = prevHpRef.current;
+        prevHpRef.current = hp;
+
+        const timers = [];
+        const clearTimers = () => timers.forEach(clearTimeout);
+
+        if (hp < prevHp) {
+            timers.push(setTimeout(() => {
+                setIsHealing(false);
+                setIsTakingDamage(true);
+                setDisplayHp(prevHp);
+                setDamageGhostHp(prevHp);
+                setHealGhostHp(hp);
+            }, 0));
+            timers.push(setTimeout(() => setDisplayHp(hp), 120));
+            timers.push(setTimeout(() => setDamageGhostHp(hp), 300));
+            timers.push(setTimeout(() => setIsTakingDamage(false), 340));
+        } else if (hp > prevHp) {
+            timers.push(setTimeout(() => {
+                setDisplayHp(prevHp);
+                setDamageGhostHp(prevHp);
+                setHealGhostHp(hp);
+                setIsHealing(true);
+                setIsTakingDamage(false);
+            }, 0));
+            timers.push(setTimeout(() => setDisplayHp(hp), 120));
+            timers.push(setTimeout(() => setDamageGhostHp(hp), 120));
+            timers.push(setTimeout(() => setHealGhostHp(hp), 420));
+            timers.push(setTimeout(() => setIsHealing(false), 500));
+        } else {
+            timers.push(setTimeout(() => {
+                setDisplayHp(hp);
+                setDamageGhostHp(hp);
+                setHealGhostHp(hp);
+                setIsTakingDamage(false);
+            }, 0));
+        }
+
+        return clearTimers;
+    }, [hp]);
+
+    useEffect(() => {
+        if (!isPlayer || !healPulseSignal || healPulseSignal === lastHealPulseRef.current) return;
+        lastHealPulseRef.current = healPulseSignal;
+
+        const startTimer = setTimeout(() => {
+            setIsHealing(true);
+            setIsTakingDamage(false);
+            setHealGhostHp((current) => Math.max(current, hp));
+        }, 0);
+        const endTimer = setTimeout(() => setIsHealing(false), 500);
+        return () => {
+            clearTimeout(startTimer);
+            clearTimeout(endTimer);
+        };
+    }, [healPulseSignal, hp, isPlayer]);
+
+    const clampPct = (value) => Math.max(0, Math.min(100, (value / maxHp) * 100));
+    const displayPct = clampPct(displayHp);
+    const damageGhostPct = clampPct(damageGhostHp);
+    const healGhostPct = clampPct(healGhostHp);
+    const shieldPct = clampPct(shield);
+    const fillClass = isPlayer
+        ? 'bg-cyan-500 shadow-[0_0_10px_rgba(0,255,255,0.8)]'
+        : 'bg-red-500 shadow-[0_0_10px_rgba(255,0,0,0.8)]';
+
+    const showHealingBarEffect = isPlayer && isHealing;
+
+    return (
+        <div className={`w-full max-w-sm sm:max-w-md space-y-2 relative z-30 bg-black/80 p-4 rounded-lg border ${isPlayer ? 'border-cyan-900/50' : 'border-red-900/50'} backdrop-blur-md shadow-2xl transition-all duration-300`}>
+            <div className="flex justify-between items-end px-1">
+                <div className="flex items-center gap-2">
+                    <Heart className={isPlayer ? "text-cyan-500" : "text-red-500"} size={16} />
+                    <span className={`${isPlayer ? "text-cyan-400" : "text-red-400"} text-xs sm:text-sm tracking-widest font-black`}>{Math.ceil(hp)} / {maxHp} HP</span>
+                </div>
+                <span className={`font-black text-[10px] uppercase tracking-[0.3em] ${showDanger ? 'text-red-500 animate-pulse' : 'text-slate-500'}`}>
+                    {title}
+                </span>
             </div>
-            <span className={`font-black text-[10px] uppercase tracking-[0.3em] ${showDanger ? 'text-red-500 animate-pulse' : 'text-slate-500'}`}>
-                {title}
-            </span>
-        </div>
-        <div className="w-full h-3 bg-black rounded-sm border border-slate-700 overflow-hidden relative">
-            <div className={`h-full transition-all duration-200 ${isPlayer ? 'bg-cyan-500 shadow-[0_0_10px_rgba(0,255,255,0.8)]' : 'bg-red-500 shadow-[0_0_10px_rgba(255,0,0,0.8)]'}`} style={{ width: `${(hp / maxHp) * 100}%` }} />
-        </div>
-        {extraContent && (
-            <div className="mt-2">
-                {extraContent}
+            <div className="relative w-full">
+                <div className={`w-full h-3 bg-black rounded-sm border overflow-hidden relative ${showHealingBarEffect ? 'border-green-200 shadow-[0_0_42px_rgba(74,222,128,1)] animate-[heal-bar-glow_540ms_cubic-bezier(0.16,0.84,0.24,1)_forwards]' : 'border-slate-700 transition-colors duration-200'}`}>
+                    <div className="absolute inset-0 bg-slate-950" />
+                    {showHealingBarEffect && (
+                        <div className="absolute inset-y-0 -left-1/3 w-1/2 bg-gradient-to-r from-transparent via-white/80 to-transparent blur-[2px] animate-[heal-bar-sheen_480ms_cubic-bezier(0.18,0.88,0.24,1)_forwards]" />
+                    )}
+                    <div className="absolute left-0 top-0 h-full bg-white/90 transition-[width] duration-220 ease-out" style={{ width: `${damageGhostPct}%` }} />
+                    {showHealingBarEffect && healGhostPct > displayPct && (
+                        <div className="absolute left-0 top-0 h-full bg-gradient-to-r from-green-300/95 via-emerald-200/95 to-green-300/90 shadow-[0_0_30px_rgba(74,222,128,1)] transition-[width] duration-[420ms] ease-out" style={{ width: `${healGhostPct}%` }} />
+                    )}
+                    {isTakingDamage && damageGhostPct > displayPct && (
+                        <div
+                            className="absolute top-0 h-full bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)] transition-all duration-200 ease-out"
+                            style={{ left: `${displayPct}%`, width: `${Math.max(0, damageGhostPct - displayPct)}%` }}
+                        />
+                    )}
+                    <div className={`absolute left-0 top-0 h-full transition-[width] duration-260 ease-out ${fillClass} ${showHealingBarEffect ? 'shadow-[0_0_56px_rgba(74,222,128,1)] brightness-[1.56] saturate-[1.28] animate-[heal-fill-flash_520ms_cubic-bezier(0.16,0.84,0.24,1)_forwards]' : ''}`} style={{ width: `${displayPct}%` }} />
+                </div>
+                {isPlayer && shield > 0 && (
+                    <div
+                        className="absolute left-0 -top-[2px] h-[calc(100%+4px)] overflow-hidden pointer-events-none transition-[width] duration-200 ease-out rounded-sm z-[3]"
+                        style={{ width: `${shieldPct}%` }}
+                    >
+                        <div className="absolute inset-0 rounded-sm bg-gradient-to-b from-sky-100/75 via-cyan-200/45 to-blue-500/25 border border-cyan-100/75 border-r-cyan-100/100 shadow-[inset_0_0_12px_rgba(255,255,255,0.4),0_0_14px_rgba(56,189,248,0.55)]" />
+                        <div
+                            className="absolute inset-0 opacity-80 mix-blend-screen"
+                            style={{
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='24' viewBox='0 0 30 24'%3E%3Cg fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='1.25' stroke-linejoin='round'%3E%3Cpath d='M7 2 L13.5 6 L13.5 14 L7 18 L0.5 14 L0.5 6 Z'/%3E%3Cpath d='M22.5 6 L29 10 L29 18 L22.5 22 L16 18 L16 10 Z'/%3E%3C/g%3E%3C/svg%3E")`,
+                                backgroundSize: '22px 18px',
+                                backgroundRepeat: 'repeat',
+                                backgroundPosition: '5px 2px',
+                            }}
+                        />
+                    </div>
+                )}
             </div>
-        )}
-    </div>
-);
+            {extraContent && (
+                <div className="mt-2">
+                    {extraContent}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const CombatVfxCanvas = ({ activeEffects, enemyAttackEffects, hitStopUntil, enemyRef }) => {
     const canvasRef = useRef(null);
@@ -549,26 +662,41 @@ const CombatVfxCanvas = ({ activeEffects, enemyAttackEffects, hitStopUntil, enem
                 : fx.type === 'heal'
                     ? 'rgba(74,222,128,0.9)'
                     : 'rgba(34,211,238,0.85)';
-            pushParticle({
-                kind: 'ring',
-                born: now,
-                ttl: 240,
-                x: metrics.player.x,
-                y: metrics.player.y - 10,
-                radius: fx.type === 'util' ? 86 : 118,
-                lineWidth: fx.type === 'util' ? 4 : 6,
-                color,
-                dashed: fx.type === 'util',
-            });
-            pushParticle({
-                kind: 'coreFlash',
-                born: now,
-                ttl: 140,
-                x: metrics.player.x,
-                y: metrics.player.y - 10,
-                radius: fx.type === 'util' ? 22 : 28,
-                color,
-            });
+            if (fx.type === 'def') {
+                pushParticle({
+                    kind: 'barrier',
+                    born: now,
+                    ttl: 340,
+                    x: metrics.player.x,
+                    y: metrics.height * 0.94,
+                    width: Math.min(860, metrics.width * 0.98),
+                    height: Math.min(238, metrics.height * 0.34),
+                    color: 'rgba(96,165,250,0.92)',
+                    glow: 'rgba(125,211,252,0.9)',
+                    cellSize: 34,
+                });
+            } else if (fx.type === 'util') {
+                pushParticle({
+                    kind: 'ring',
+                    born: now,
+                    ttl: 240,
+                    x: metrics.player.x,
+                    y: metrics.player.y - 10,
+                    radius: 86,
+                    lineWidth: 4,
+                    color,
+                    dashed: true,
+                });
+                pushParticle({
+                    kind: 'coreFlash',
+                    born: now,
+                    ttl: 140,
+                    x: metrics.player.x,
+                    y: metrics.player.y - 10,
+                    radius: 22,
+                    color,
+                });
+            }
         }
     }, [getMetrics, pushParticle, spawnImpactBurst, withAlpha]);
 
@@ -748,6 +876,116 @@ const CombatVfxCanvas = ({ activeEffects, enemyAttackEffects, hitStopUntil, enem
                     ctx.beginPath();
                     ctx.arc(p.x, p.y, p.radius * (0.45 + t * 0.95), 0, Math.PI * 2);
                     ctx.stroke();
+                    ctx.restore();
+                    continue;
+                }
+
+                if (p.kind === 'barrier') {
+                    const reveal = Math.min(1, t / 0.18);
+                    const fade = Math.max(0, 1 - Math.max(0, t - 0.22) / 0.78);
+                    const width = p.width * (0.68 + reveal * 0.32);
+                    const height = p.height * (0.58 + reveal * 0.42);
+                    const left = -width / 2;
+                    const hexRadius = Math.max(42, p.cellSize * (0.66 + reveal * 0.06));
+                    const colStep = hexRadius * Math.sqrt(3);
+                    const rowStep = hexRadius * 1.42;
+                    const bottomCount = Math.max(7, Math.ceil(width / colStep) + 3);
+                    const topCount = Math.max(5, bottomCount - 1);
+                    const baseY = 0;
+
+                    ctx.save();
+                    ctx.translate(p.x, p.y - (1 - reveal) * 28);
+
+                    const panels = [];
+                    const bottomStartX = -((bottomCount - 1) * colStep) / 2;
+                    for (let i = 0; i < bottomCount; i += 1) {
+                        const progress = bottomCount === 1 ? 0.5 : i / (bottomCount - 1);
+                        const centerBias = 1 - Math.abs(progress - 0.5) * 2;
+                        const edgeFade = 0.18 + centerBias * 0.82;
+                        panels.push({
+                            x: bottomStartX + i * colStep,
+                            y: baseY - centerBias * height * 0.1 + (1 - centerBias) * height * 0.06,
+                            radius: hexRadius,
+                            arc: centerBias * 0.7,
+                            alpha: edgeFade,
+                        });
+                    }
+                    const topStartX = -((topCount - 1) * colStep) / 2;
+                    for (let i = 0; i < topCount; i += 1) {
+                        const progress = topCount === 1 ? 0.5 : i / (topCount - 1);
+                        const centerBias = 1 - Math.abs(progress - 0.5) * 2;
+                        const edgeFade = 0.16 + centerBias * 0.84;
+                        panels.push({
+                            x: topStartX + i * colStep,
+                            y: baseY - rowStep - centerBias * height * 0.12 + (1 - centerBias) * height * 0.08,
+                            radius: hexRadius,
+                            arc: 0.35 + centerBias,
+                            alpha: edgeFade,
+                        });
+                    }
+
+                    const drawHex = (cx, cy, radius) => {
+                        ctx.beginPath();
+                        for (let i = 0; i < 6; i += 1) {
+                            const angle = (Math.PI / 3) * i + Math.PI / 6;
+                            const px = cx + Math.cos(angle) * radius;
+                            const py = cy + Math.sin(angle) * radius * 0.94;
+                            if (i === 0) ctx.moveTo(px, py);
+                            else ctx.lineTo(px, py);
+                        }
+                        ctx.closePath();
+                    };
+
+                    ctx.shadowBlur = 24;
+                    ctx.shadowColor = withAlpha(p.glow, 0.84 * fade);
+
+                    panels.forEach((panel, index) => {
+                        drawHex(panel.x, panel.y, panel.radius);
+                        const faceGradient = ctx.createLinearGradient(
+                            panel.x - panel.radius,
+                            panel.y - panel.radius,
+                            panel.x + panel.radius,
+                            panel.y + panel.radius
+                        );
+                        faceGradient.addColorStop(0, withAlpha('rgba(255,255,255,0.96)', (0.18 + panel.arc * 0.08) * fade * panel.alpha));
+                        faceGradient.addColorStop(0.35, withAlpha('rgba(186,230,253,0.9)', (0.16 + panel.arc * 0.06) * fade * panel.alpha));
+                        faceGradient.addColorStop(1, withAlpha(p.color, (0.12 + panel.arc * 0.05) * fade * panel.alpha));
+                        ctx.fillStyle = faceGradient;
+                        ctx.fill();
+
+                        ctx.lineWidth = 3.2 + panel.arc * 1.3;
+                        ctx.strokeStyle = withAlpha('rgba(219,234,254,1)', (0.72 + panel.arc * 0.2) * fade * panel.alpha);
+                        ctx.stroke();
+
+                        if (index < panels.length - 1) {
+                            const next = panels[index + 1];
+                            const seamAlpha = Math.min(panel.alpha, next.alpha);
+                            ctx.beginPath();
+                            ctx.moveTo(panel.x + panel.radius * 0.68, panel.y - panel.radius * 0.16);
+                            ctx.lineTo(next.x - next.radius * 0.68, next.y - next.radius * 0.16);
+                            ctx.strokeStyle = withAlpha(p.glow, 0.22 * fade * seamAlpha);
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                        }
+                    });
+
+                    const sweep = ctx.createLinearGradient(left - width * 0.28 + t * width * 1.6, 0, left + t * width * 1.6, 0);
+                    sweep.addColorStop(0, 'rgba(255,255,255,0)');
+                    sweep.addColorStop(0.5, withAlpha('rgba(255,255,255,0.98)', 0.42 * fade));
+                    sweep.addColorStop(1, 'rgba(255,255,255,0)');
+                    ctx.strokeStyle = sweep;
+                    ctx.lineWidth = hexRadius * 0.72;
+                    ctx.beginPath();
+                    const sweepPanels = panels
+                        .slice()
+                        .sort((a, b) => a.y - b.y || a.x - b.x);
+                    for (let i = 0; i < sweepPanels.length; i += 1) {
+                        const panel = sweepPanels[i];
+                        if (i === 0) ctx.moveTo(panel.x, panel.y);
+                        else ctx.lineTo(panel.x, panel.y);
+                    }
+                    ctx.stroke();
+
                     ctx.restore();
                     continue;
                 }
@@ -938,6 +1176,8 @@ export default function App() {
   const [upgradeAnimId, setUpgradeAnimId] = useState(null);
   const [frameNow, setFrameNow] = useState(0);
   const [hitStopUntil, setHitStopUntil] = useState(0);
+  const [pendingDrawEffects, setPendingDrawEffects] = useState([]);
+  const [drawAnimations, setDrawAnimations] = useState([]);
 
   const generateRunMap = (currentMeta) => {
       const map = [];
@@ -978,6 +1218,9 @@ export default function App() {
     cardDamage: {}
   });
   const enemyCardRef = useRef(null);
+  const deckButtonRef = useRef(null);
+  const handCardRefs = useRef(new Map());
+  const queuedDrawCardsRef = useRef([]);
 
   useEffect(() => {
      if (run && run.nodeIndex !== undefined) {
@@ -996,6 +1239,55 @@ export default function App() {
          };
      }
   }, [run]);
+
+  useLayoutEffect(() => {
+      if (pendingDrawEffects.length === 0) return undefined;
+
+      let cleanupTimers = [];
+      const rafId = requestAnimationFrame(() => {
+          const resolved = [];
+          const unresolved = [];
+
+          pendingDrawEffects.forEach((effect) => {
+              const targetEl = handCardRefs.current.get(effect.runId);
+              if (!targetEl) {
+                  unresolved.push({
+                      ...effect,
+                      retries: (effect.retries || 0) + 1,
+                  });
+                  return;
+              }
+
+              const rect = targetEl.getBoundingClientRect();
+              resolved.push({
+                  ...effect,
+                  target: {
+                      x: rect.left + rect.width / 2,
+                      y: rect.top + rect.height / 2,
+                      width: rect.width,
+                      height: rect.height,
+                  },
+              });
+          });
+
+          if (resolved.length > 0) {
+              setDrawAnimations((prev) => [...prev, ...resolved]);
+              resolved.forEach((effect) => {
+                  const timer = setTimeout(() => {
+                      setDrawAnimations((prev) => prev.filter((item) => item.id !== effect.id));
+                  }, 620 + effect.staggerMs);
+                  cleanupTimers.push(timer);
+              });
+          }
+
+          setPendingDrawEffects(unresolved.filter((effect) => (effect.retries || 0) < 6));
+      });
+
+      return () => {
+          cancelAnimationFrame(rafId);
+          cleanupTimers.forEach(clearTimeout);
+      };
+  }, [pendingDrawEffects, run.hand]);
 
   const lastUpdate = useRef(0);
   const timerRef = useRef();
@@ -1050,8 +1342,9 @@ export default function App() {
     return card.cost;
   }, [meta.freeLowCost, meta.freeUtil]);
 
-  const drawInternal = useCallback((currentState, amount = 1) => {
+  const drawCardsWithMeta = useCallback((currentState, amount = 1) => {
       let state = { ...currentState, deck: [...currentState.deck], hand: [...currentState.hand], discard: [...currentState.discard] };
+      const drawnCards = [];
       for (let i = 0; i < amount; i++) {
           if (state.hand.length >= meta.maxHand) break;
           if (state.deck.length === 0) {
@@ -1059,10 +1352,49 @@ export default function App() {
               state.deck = shuffle(state.discard);
               state.discard = [];
           }
-          if (state.deck.length > 0) state.hand.push(state.deck.pop());
+          if (state.deck.length > 0) {
+              const drawnCard = state.deck.pop();
+              state.hand.push(drawnCard);
+              drawnCards.push(drawnCard);
+          }
       }
-      return state;
+      return { state, drawnCards };
   }, [meta.maxHand]);
+
+  const queueDrawEffects = useCallback((drawnCards) => {
+      if (!drawnCards || drawnCards.length === 0) return;
+      const deckRect = deckButtonRef.current?.getBoundingClientRect();
+      if (!deckRect) return;
+
+      setPendingDrawEffects((prev) => [
+          ...prev,
+          ...drawnCards.map((card, index) => ({
+              id: Math.random(),
+              runId: card.runId,
+              cardObj: card,
+              queuedAt: Date.now(),
+              origin: {
+                  x: deckRect.left + deckRect.width / 2,
+                  y: deckRect.top + deckRect.height * 0.42,
+                  width: Math.max(88, deckRect.width * 0.96),
+                  height: Math.max(128, deckRect.height * 0.96),
+              },
+              staggerMs: index * 55,
+          })),
+      ]);
+  }, []);
+
+  const setHandCardRef = useCallback((runId, node) => {
+      if (node) handCardRefs.current.set(runId, node);
+      else handCardRefs.current.delete(runId);
+  }, []);
+
+  useEffect(() => {
+      if (queuedDrawCardsRef.current.length === 0) return;
+      const queued = queuedDrawCardsRef.current;
+      queuedDrawCardsRef.current = [];
+      queueDrawEffects(queued);
+  }, [run.hand, queueDrawEffects]);
 
   // --- Actions ---
 
@@ -1235,7 +1567,11 @@ export default function App() {
             nextRun.cardDamage[trackKey] = (nextRun.cardDamage[trackKey] || 0) + dmg;
         }
         
-        if (meta.drawOnAtk) nextRun = drawInternal(nextRun, 1);
+        if (meta.drawOnAtk) {
+            const drawResult = drawCardsWithMeta(nextRun, 1);
+            nextRun = drawResult.state;
+            queuedDrawCardsRef.current = [...queuedDrawCardsRef.current, ...drawResult.drawnCards];
+        }
         if (meta.heavyArmor && card.cost >= 3) nextRun.shield += 5;
       } else if (card.type === 'mana') {
         let val = card.currentValue;
@@ -1265,7 +1601,9 @@ export default function App() {
             const healAmt = meta.healBoost ? Math.floor(card.currentValue * 1.5) : card.currentValue;
             nextRun.hp = Math.min(nextRun.maxHp, nextRun.hp + healAmt);
         } else {
-            nextRun = drawInternal(nextRun, card.currentValue);
+            const drawResult = drawCardsWithMeta(nextRun, card.currentValue);
+            nextRun = drawResult.state;
+            queuedDrawCardsRef.current = [...queuedDrawCardsRef.current, ...drawResult.drawnCards];
         }
       }
 
@@ -1331,7 +1669,14 @@ export default function App() {
     });
   };
 
-  const drawCard = () => { setIsDiscardMode(false); setRun(prev => drawInternal(prev, meta.drawMulti)); };
+  const drawCard = () => {
+    setIsDiscardMode(false);
+    setRun(prev => {
+        const drawResult = drawCardsWithMeta(prev, meta.drawMulti);
+        queuedDrawCardsRef.current = [...queuedDrawCardsRef.current, ...drawResult.drawnCards];
+        return drawResult.state;
+    });
+  };
   
   const discardCardByRunId = (runIdStr) => {
     setRun(prev => {
@@ -1350,7 +1695,6 @@ export default function App() {
       const dt = now < hitStopUntil ? 0 : (now - lastUpdate.current) / 1000;
       lastUpdate.current = now;
       setFrameNow(now);
-
       setRun(prev => {
         if (prev.hp <= 0) {
             setMeta(m => ({ ...m, gp: m.gp + prev.gpEarned, fragments: m.fragments + prev.fragsEarned, packs: m.packs + prev.packsEarned }));
@@ -1385,7 +1729,9 @@ export default function App() {
             next.autoDrawTimer += dt;
             if (next.autoDrawTimer >= meta.autoDrawRate) {
                 next.autoDrawTimer = 0;
-                next = drawInternal(next, 1);
+                const drawResult = drawCardsWithMeta(next, 1);
+                next = drawResult.state;
+                queuedDrawCardsRef.current = [...queuedDrawCardsRef.current, ...drawResult.drawnCards];
             }
         }
 
@@ -1428,7 +1774,7 @@ export default function App() {
     lastUpdate.current = Date.now();
     timerRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(timerRef.current);
-  }, [view, run.isPaused, meta.regenRate, meta.autoDrawRate, meta.autoPlayMana, meta.maxHand, meta.kineticMana, meta.manaRefund, meta.manaSurge, drawInternal, getEffectiveCost, hitStopUntil]);
+  }, [view, run.isPaused, meta.regenRate, meta.autoDrawRate, meta.autoPlayMana, meta.maxHand, meta.kineticMana, meta.manaRefund, meta.manaSurge, drawCardsWithMeta, getEffectiveCost, hitStopUntil]);
 
 
   // --- Gacha & Upgrades ---
@@ -1501,6 +1847,21 @@ export default function App() {
       @keyframes mana-counter-pop { 0% { transform: scale(1); filter: brightness(1); } 35% { transform: scale(1.22); filter: brightness(1.45); } 100% { transform: scale(1); filter: brightness(1); } }
       @keyframes mana-charge-core { 0% { transform: translate(-50%, 0) scale(0.55); opacity: 0.8; } 45% { opacity: 1; } 100% { transform: translate(-50%, -8px) scale(1.35); opacity: 0; } }
       @keyframes mana-counter-glow { 0% { opacity: 0; transform: scale(0.8); } 30% { opacity: 0.9; } 100% { opacity: 0; transform: scale(1.45); } }
+      @keyframes heal-bar-glow {
+        0% { border-color: rgba(220, 252, 231, 1); box-shadow: 0 0 58px rgba(134, 239, 172, 1), 0 0 26px rgba(220, 252, 231, 0.92); }
+        18% { border-color: rgba(187, 247, 208, 1); box-shadow: 0 0 46px rgba(74, 222, 128, 1), 0 0 18px rgba(220, 252, 231, 0.8); }
+        100% { border-color: rgba(74, 222, 128, 0.9); box-shadow: 0 0 18px rgba(74, 222, 128, 0.28), 0 0 0 rgba(220, 252, 231, 0); }
+      }
+      @keyframes heal-bar-sheen {
+        0% { transform: translateX(-10%) scaleX(0.82); opacity: 0; }
+        12% { opacity: 0.95; }
+        100% { transform: translateX(255%) scaleX(1.08); opacity: 0; }
+      }
+      @keyframes heal-fill-flash {
+        0% { filter: brightness(2.2) saturate(1.6); box-shadow: 0 0 78px rgba(134, 239, 172, 1), 0 0 36px rgba(220, 252, 231, 0.98), inset 0 0 22px rgba(255, 255, 255, 0.82); }
+        16% { filter: brightness(1.9) saturate(1.46); box-shadow: 0 0 62px rgba(74, 222, 128, 1), 0 0 28px rgba(220, 252, 231, 0.88), inset 0 0 16px rgba(255, 255, 255, 0.62); }
+        100% { filter: brightness(1.18) saturate(1.1); box-shadow: 0 0 18px rgba(74, 222, 128, 0.28), inset 0 0 0 rgba(255,255,255,0); }
+      }
       @keyframes mana-gather-particle {
         0% { transform: translate(var(--mana-start-x), var(--mana-start-y)) rotate(var(--mana-rot-start)) scaleX(0.35) scaleY(0.55); opacity: 0; }
         10% { opacity: 1; }
@@ -1511,6 +1872,32 @@ export default function App() {
       @keyframes card-launch { 0% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 18% { transform: translate(-50%, calc(-50% - 112px)) scale(1.02); opacity: 1; } 100% { transform: translate(-50%, calc(-50% - 190px)) scale(0.8); opacity: 0; } }
       @keyframes card-disintegrate { 0% { filter: brightness(1); clip-path: inset(0 0 0 0); } 55% { filter: brightness(1.2); } 100% { filter: brightness(1.8) blur(4px); clip-path: inset(0 0 100% 0); } }
       @keyframes card-spark-rise { 0% { transform: translate(0, 0) scale(0.25); opacity: 0; } 18% { opacity: 1; } 100% { transform: translate(var(--spark-x), calc(var(--spark-y) - 62px)) scale(0.95); opacity: 0; } }
+      @keyframes draw-deck-pulse {
+        0% { transform: translateY(0) scale(1); box-shadow: 5px 5px 20px rgba(0,0,0,0.8), inset 0 0 20px rgba(0,0,0,0.8), 0 0 0 rgba(34,211,238,0); filter: brightness(1); }
+        30% { transform: translateY(-4px) scale(1.02); box-shadow: 5px 10px 26px rgba(0,0,0,0.9), inset 0 0 20px rgba(0,0,0,0.8), 0 0 26px rgba(34,211,238,0.45); filter: brightness(1.18); }
+        100% { transform: translateY(0) scale(1); box-shadow: 5px 5px 20px rgba(0,0,0,0.8), inset 0 0 20px rgba(0,0,0,0.8), 0 0 0 rgba(34,211,238,0); filter: brightness(1); }
+      }
+      @keyframes draw-card-flight {
+        0% { transform: translate(-50%, -50%) translate(0px, 0px) scale(0.72) rotate(-7deg); opacity: 0; }
+        12% { opacity: 1; }
+        60% { transform: translate(-50%, -50%) translate(calc(var(--draw-dx) * 0.62), calc(var(--draw-dy) * 0.62 - 42px)) scale(0.9) rotate(2deg); opacity: 1; }
+        100% { transform: translate(-50%, -50%) translate(var(--draw-dx), var(--draw-dy)) scale(1) rotate(0deg); opacity: 0; }
+      }
+      @keyframes draw-card-holo {
+        0% { filter: brightness(1.5) saturate(1.4); opacity: 0.7; }
+        50% { filter: brightness(1.9) saturate(1.8); opacity: 1; }
+        100% { filter: brightness(1.15) saturate(1.15); opacity: 0.92; }
+      }
+      @keyframes draw-card-trail {
+        0% { transform: translate(-50%, -50%) translate(0px, 0px) scaleY(0.4); opacity: 0; }
+        16% { opacity: 0.75; }
+        100% { transform: translate(-50%, -50%) translate(calc(var(--draw-dx) * 0.82), calc(var(--draw-dy) * 0.82 - 20px)) scaleY(1); opacity: 0; }
+      }
+      @keyframes draw-card-arrive {
+        0% { transform: translate(-50%, -50%) scale(0.82); opacity: 0; }
+        35% { opacity: 0.9; }
+        100% { transform: translate(-50%, -50%) scale(1.14); opacity: 0; }
+      }
       @keyframes attack-flash { 0% { opacity: 0; transform: scale(0.74); } 18% { opacity: 0.9; transform: scale(0.98); } 100% { opacity: 0; transform: scale(1.12); } }
       @keyframes projectile-shot { 0% { transform: translate(-50%, 20px) rotate(var(--shot-angle)) scaleX(0.45); opacity: 0; } 18% { opacity: 1; } 100% { transform: translate(-50%, -78px) rotate(var(--shot-angle)) scaleX(1); opacity: 0; } }
       @keyframes impact-ring { 0% { opacity: 0; transform: scale(0.72); } 18% { opacity: 0.85; } 100% { opacity: 0; transform: scale(1.18); } }
@@ -1669,6 +2056,7 @@ export default function App() {
     const isHitStopActive = renderTimestamp < hitStopUntil;
     const manaFx = run.activeEffects.filter(e => e.type === 'mana');
     const hasManaFx = manaFx.length > 0;
+    const hasDrawFx = pendingDrawEffects.length > 0 || drawAnimations.length > 0;
 
     let monsterTimerPercent = 0;
     let timeLeft = "0.0";
@@ -1688,6 +2076,10 @@ export default function App() {
             ? (run.monster.isBoss ? BOSS_LIST.map(e=>e.icon)[run.monster.iconId] : ENEMY_LIST.map(e=>e.icon)[run.monster.iconId]) 
             : (run.monster.isBoss ? Trophy : Sword);
     }
+
+    const playerHealPulseSignal = [...(run.activeEffects || [])]
+        .filter((effect) => effect.type === 'heal')
+        .reduce((latest, effect) => Math.max(latest, effect.timestamp || 0), 0);
 
     const shakeLevel = isCombatNode ? run.activeEffects.reduce((max, e) => e.type === 'atk' ? Math.max(max, e.cost >= 3 ? 2 : 1) : max, 0) : 0;
     const shakeClass = shakeLevel === 2 ? 'animate-[window-shake-heavy_0.3s_ease-in-out_infinite]' : shakeLevel === 1 ? 'animate-[window-shake-small_0.15s_ease-in-out_infinite]' : '';
@@ -1898,6 +2290,8 @@ export default function App() {
                   hp={run.hp} 
                   maxHp={run.maxHp} 
                   title="Player Systems" 
+                  healPulseSignal={playerHealPulseSignal}
+                  shield={run.shield}
                   extraContent={
                       <div className="flex justify-between items-center mt-2">
                           {run.shield > 0 ? (
@@ -2008,20 +2402,21 @@ export default function App() {
 
           <div className={`absolute bottom-2 sm:bottom-8 left-1/2 -translate-x-1/2 flex items-end -space-x-12 sm:-space-x-4 z-30 transform scale-75 sm:scale-100 origin-bottom transition-all duration-300 ${isDiscardMode ? 'bg-red-900/30 p-4 sm:p-8 rounded-xl shadow-[0_0_50px_rgba(255,0,0,0.3)] ring-2 ring-red-500' : ''}`}>
             {run.hand.map((card) => (
-              <Card 
-                key={card.runId} 
-                cardId={card.id}
-                overrideCard={card}
-                onPlay={playCard} 
-                onDiscard={discardCardByRunId}
-                effectiveCost={getEffectiveCost(card)}
-                canAfford={run.mana >= getEffectiveCost(card)}
-                inHand={true}
-                level={card.currentLevel}
-                overrideValue={card.currentValue}
-                isDiscardMode={isDiscardMode}
-                isEventNode={!isCombatNode && !!run.activeEvent}
-              />
+              <div key={card.runId} ref={(node) => setHandCardRef(card.runId, node)} className="relative">
+                <Card 
+                  cardId={card.id}
+                  overrideCard={card}
+                  onPlay={playCard} 
+                  onDiscard={discardCardByRunId}
+                  effectiveCost={getEffectiveCost(card)}
+                  canAfford={run.mana >= getEffectiveCost(card)}
+                  inHand={true}
+                  level={card.currentLevel}
+                  overrideValue={card.currentValue}
+                  isDiscardMode={isDiscardMode}
+                  isEventNode={!isCombatNode && !!run.activeEvent}
+                />
+              </div>
             ))}
             {run.hand.length === 0 && (
                 <div className="w-48 sm:w-72 h-32 sm:h-40 flex items-center justify-center border-2 border-dashed border-cyan-900/50 rounded-sm bg-black/40 backdrop-blur-sm pointer-events-none">
@@ -2034,8 +2429,9 @@ export default function App() {
 
           <div className="absolute right-2 sm:right-8 bottom-4 sm:bottom-8 flex flex-col items-end sm:items-center gap-1 sm:gap-2 z-10 group">
              <button 
+                ref={deckButtonRef}
                 onClick={drawCard}
-                className="relative w-16 h-24 sm:w-28 sm:h-40 bg-[#1a110a] rounded-sm border-[2px] sm:border-[4px] border-[#4a3222] shadow-[5px_5px_20px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(0,0,0,0.8)] flex flex-col items-center justify-center transform hover:-translate-y-2 hover:shadow-[10px_15px_30px_rgba(0,255,255,0.2)] transition-all active:scale-95 overflow-hidden origin-bottom-right sm:origin-center"
+                className={`relative w-16 h-24 sm:w-28 sm:h-40 bg-[#1a110a] rounded-sm border-[2px] sm:border-[4px] border-[#4a3222] shadow-[5px_5px_20px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(0,0,0,0.8)] flex flex-col items-center justify-center transform hover:-translate-y-2 hover:shadow-[10px_15px_30px_rgba(0,255,255,0.2)] transition-all active:scale-95 overflow-hidden origin-bottom-right sm:origin-center ${hasDrawFx ? 'animate-[draw-deck-pulse_0.34s_ease-out]' : ''}`}
              >
                 {(run.hand.length === 0 || (run.hand.length > 0 && run.hand.length < meta.maxHand && run.hand.every(c => getEffectiveCost(c) > run.mana))) && (
                    <div className="absolute inset-0 flex items-center justify-center animate-bounce z-[60] text-white drop-shadow-[0_0_15px_rgba(0,255,255,0.8)] pointer-events-none">
@@ -2785,6 +3181,7 @@ export default function App() {
                   pixelHeight={fx.launchOrigin.height || 192}
                   level={fx.cardObj.currentLevel}
                   overrideValue={fx.cardObj.currentValue}
+                  disableInteraction={true}
                 />
                 {[...Array(8)].map((_, idx) => (
                   <div
@@ -2796,6 +3193,59 @@ export default function App() {
               </div>
             </div>
           ) : null
+        ))}
+        {drawAnimations.map((fx) => (
+          <React.Fragment key={`draw-ghost-${fx.id}`}>
+            <div
+              className="fixed pointer-events-none animate-[draw-card-trail_0.54s_cubic-bezier(0.12,0.74,0.2,1)_forwards]"
+              style={{
+                left: `${fx.origin.x}px`,
+                top: `${fx.origin.y}px`,
+                '--draw-dx': `${fx.target.x - fx.origin.x}px`,
+                '--draw-dy': `${fx.target.y - fx.origin.y}px`,
+                animationDelay: `${fx.staggerMs}ms`,
+              }}
+            >
+              <div className="w-10 h-28 rounded-full bg-gradient-to-t from-cyan-400/0 via-cyan-300/55 to-white/90 blur-[3px]" />
+            </div>
+            <div
+              className="fixed pointer-events-none animate-[draw-card-flight_0.54s_cubic-bezier(0.12,0.74,0.2,1)_forwards]"
+              style={{
+                left: `${fx.origin.x}px`,
+                top: `${fx.origin.y}px`,
+                '--draw-dx': `${fx.target.x - fx.origin.x}px`,
+                '--draw-dy': `${fx.target.y - fx.origin.y}px`,
+                animationDelay: `${fx.staggerMs}ms`,
+              }}
+            >
+              <div
+                className="relative animate-[draw-card-holo_0.54s_linear_forwards]"
+                style={{ width: `${fx.target.width || 128}px`, height: `${fx.target.height || 192}px` }}
+              >
+                <div className="absolute inset-[2px] rounded-[3px] bg-[linear-gradient(180deg,rgba(255,255,255,0.28),rgba(34,211,238,0.06))] mix-blend-screen" />
+                <Card
+                  overrideCard={fx.cardObj}
+                  pixelWidth={fx.target.width || 128}
+                  pixelHeight={fx.target.height || 192}
+                  level={fx.cardObj.currentLevel}
+                  overrideValue={fx.cardObj.currentValue}
+                  disableInteraction={true}
+                />
+                <div className="absolute inset-[2px] rounded-[3px] border border-cyan-200/85 shadow-[0_0_14px_rgba(34,211,238,0.42)]" />
+                <div className="absolute inset-[2px] rounded-[3px] bg-[repeating-linear-gradient(180deg,rgba(255,255,255,0.14)_0px,rgba(255,255,255,0.14)_2px,rgba(34,211,238,0)_2px,rgba(34,211,238,0)_6px)] opacity-55 mix-blend-screen" />
+              </div>
+            </div>
+            <div
+              className="fixed pointer-events-none animate-[draw-card-arrive_0.28s_ease-out_forwards]"
+              style={{
+                left: `${fx.target.x}px`,
+                top: `${fx.target.y}px`,
+                animationDelay: `${fx.staggerMs + 320}ms`,
+              }}
+            >
+              <div className="w-20 h-28 rounded-sm border border-cyan-100/75 bg-cyan-200/12 shadow-[0_0_34px_rgba(34,211,238,0.75)]" />
+            </div>
+          </React.Fragment>
         ))}
       </div>
     </div>
