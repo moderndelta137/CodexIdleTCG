@@ -2,16 +2,15 @@
 
 ## Project Snapshot
 
-Codex Idle TCG is a real-time idle-action deckbuilder with persistent meta progression, pack opening, deck editing, and combat driven by enemy attack timers instead of turns. The current build is already playable and visually stylized, with the present development focus being combat feel, UI clarity, and spectacle.
+Codex Idle TCG is a real-time idle-action deckbuilder with persistent meta progression, banner-based card acquisition, deck editing, duplicate upgrades, and timer-driven combat. The current build is already playable and visually stylized. The latest major change is a stage-and-dungeon progression shell that hides future content until unlocked.
 
 ## Core Direction
 
 - Stay an idle-action deckbuilder
 - Keep runs mostly linear for now
-- Add more dungeon/content breadth later
+- Use stages as the meta-progression wrapper for unlocking whole categories of content
 - Let progression break TCG-style rules piece by piece
-- Make major upgrades feel transformative
-- Favor broad content expansion before deeper systemic complexity
+- Favor broad content expansion before deeper system complexity
 
 ## Important Codebase Constraint
 
@@ -22,80 +21,151 @@ Keep these inside `App()` unless there is a compelling reason not to. This is an
 ## Current Systems Already Working
 
 - Real-time combat with timer-based enemy attacks
-- Data-driven card and enemy content loaded from CSV
+- CSV-driven cards and enemies
+- Stage-gated hidden progression
+- Dungeon selection flow
 - Skill tree progression
-- Deck editor and collection/codex flow
-- Pack opening and duplicate upgrades
-- Map progression with combat and event nodes
+- Deck editor
+- Codex and duplicate-based card upgrades
+- Banner-based pack opening with gated tabs and pull sizes
 - GitHub Pages-compatible asset loading through `getAssetPath()` and `import.meta.env.BASE_URL`
+
+## Current Progression State
+
+### Save Model
+
+- Save is versioned via `saveVersion`
+- Older saves are intentionally reset to fresh progression state
+- Progression fields now include:
+  - `stage`
+  - `unlockedStages`
+  - `unlockedFeatures`
+  - `completedDungeons`
+
+### Stage 1
+
+- Stage name: `Spire Protocol`
+- Fresh run dungeon: `Null Corridor`
+- Dungeon shape is `3-10`, implemented as 30 sequential rooms
+- Floor-room display is now `X-Y`
+  - `X` = floor
+  - `Y` = room on that floor
+
+Current Stage 1 unlock room positions:
+
+- `1-3` Skills
+- `1-6` Shop
+- `1-9` Codex
+- `2-4` Upgrades
+- `2-8` Recovery Protocol banner
+- `3-3` Flurry Engine banner
+- `3-7` Pull x5
+
+Clear reward:
+
+- Unlocks `Stage 2`
+
+Important behavior:
+
+- If a feature is already unlocked, its unlock room is replaced by a normal encounter on future runs.
+
+### Stage 2 Placeholder
+
+- Dungeon: `Prism Archive`
+- Current placeholder unlock room:
+  - `2-7` / overall room 17: Pull x10
+- Clear reward:
+  - unlocks `Stage 3`
+
+### Stage 3 Placeholder
+
+- Dungeon: `Summon Vault`
+- Exists as a placeholder route only
+
+## Current Content / Shop State
+
+### Banners
+
+Current banner tabs:
+
+- `Forge Node` synthesis tab
+- `Core Archive` standard banner
+- `Recovery Protocol` support banner
+- `Flurry Engine` multi-hit banner
+
+Feature gating:
+
+- `Core Archive` is baseline
+- `Recovery Protocol` appears after its unlock room
+- `Flurry Engine` appears after its unlock room
+- Pull sizes:
+  - `x1` baseline
+  - `x5` gated by Stage 1 unlock room
+  - `x10` gated by Stage 2 unlock room
+
+### Newer Card Additions
+
+Recently added cards include:
+
+- `u5` Battle Rhythm
+- `u6` Chain Protocol
+- `a12` Spark Barrage
+- `a13` Razor Storm
+- `a14` Needle Burst
+
+These support the support/multi-hit banner identities and the `atkBuff` utility mechanic.
 
 ## Recent Visual / UX Progress
 
-### Combat
+### Combat / FX
 
-- Slash attacks now feel stronger and support varying directions
-- Ranged attacks have faster projectile motion and more forceful muzzle flash
-- Hit stop scales with stronger attacks
-- Card play from hand uses a ghost-card launch effect
+- Draw ghost-card effect split into:
+  - normal draw = ghost card only
+  - draw-card effects = ghost card + hologram overlays
+- Enemy death effect iterated into a stronger overload-pop style
+- Hologram frame alignment issues from earlier draw effect work were fixed
 
-### Resources
+### Progression / UI
 
-- Mana cards trigger counter pop and converging mana wisps
-- HP damage uses delayed white-loss behavior
-- Healing extends with a green buffer, then fills after a short delay
-- Player healing bar glow has been strengthened
+- Main menu now uses a simple aligned main action button
+- Dungeon selection moved into its own screen
+- Main run button auto-starts the only available dungeon if just one is unlocked
+- Desktop framing now targets a 16:9 viewport with black letterboxing
+- Skill tree opening pan now centers on the central node instead of approximate canvas center
+- Codex upgrade effect alignment now matches the preview card bounds
 
-### Defense
+## Recent Performance Work
 
-- Block cards create a curved hex-panel barrier wall near the player HP panel
-- HP bar now shows a barrier-style block overlay with a hex pattern
+Main long-session optimizations already implemented:
 
-### Draw Effects
+- `CombatVfxCanvas` prunes seen effect ids instead of letting them grow forever
+- Combat particle canvas now hard-caps live particle count
+- Global VFX overlay is now localized to the game frame instead of repainting the full browser viewport
+- Expired `deathEffect` cleanup remains in place
+- Earlier pointless render work such as a null-mapping pass over active effects was removed
 
-- Drawing cards now triggers a flashier deck-linked effect
-- A ghost card flies from deck to the hand slot
-- The hand slot arrival pulse is working
-- Click-blocking issues from draw VFX were addressed by disabling interaction on animated ghost cards
+If performance work continues, the next likely hotspot is:
 
-## Active Known Issue
+- DOM-based global overlays for draw/death/card-play effects during very long sessions on mobile
 
-The current unresolved bug is:
-
-- The initial cyan hologram frame on the flying draw ghost card is still rendered in the wrong position during motion.
-
-Important clarification:
-
-- The user is specifically referring to the cyan hologram-style border that appears around the moving ghost card during the deck-to-hand animation.
-- The landing pulse after the card reaches the hand is already correct.
-
-## Likely Area To Continue
-
-The draw effect rendering is near the bottom of [`src/App.jsx`](D:/Projects/CodexIdleTCG/src/App.jsx), inside the global fixed VFX layer that renders `drawAnimations`.
-
-The next thread should inspect:
-
-- positioning math for the moving draw ghost
-- width/height source used by the moving hologram frame
-- whether the effect should derive its border from the actual rendered `Card` bounds instead of a separate overlay box
-- whether transforms and fixed-position origin math are causing offset between the card and frame
-
-## Suggested Next Task
-
-Continue from the draw-card effect bug first:
-
-1. Inspect the moving ghost-card hologram frame in the `drawAnimations` overlay.
-2. Align the moving cyan frame with the actual ghost card during flight.
-3. Verify that `Cycle` and other draw cards trigger the effect reliably.
-4. Make sure no invisible overlay remains that blocks card clicks.
-
-## Useful Files
+## Current Files Most Relevant
 
 - Main game implementation: [`src/App.jsx`](D:/Projects/CodexIdleTCG/src/App.jsx)
+- Global shell styling: [`src/index.css`](D:/Projects/CodexIdleTCG/src/index.css)
 - Design doc: [`GDD.md`](D:/Projects/CodexIdleTCG/GDD.md)
 - Project context: [`context.JSON`](D:/Projects/CodexIdleTCG/context.JSON)
-- Vite base-path config: [`vite.config.js`](D:/Projects/CodexIdleTCG/vite.config.js)
 - Card data: [`public/data/cards.csv`](D:/Projects/CodexIdleTCG/public/data/cards.csv)
 - Enemy data: [`public/data/enemies.csv`](D:/Projects/CodexIdleTCG/public/data/enemies.csv)
+- Vite base-path config: [`vite.config.js`](D:/Projects/CodexIdleTCG/vite.config.js)
+
+## Suggested Next Tasks
+
+The most sensible continuation points are:
+
+1. Define the remaining stage roadmap in data instead of placeholders, especially Stage 2 feature placement.
+2. Add the next planned banner/archetype packs such as mill/discard.
+3. Reassign currently implemented late-game skills/features to their final intended stages where needed.
+4. Continue profiling mobile long-session performance if the DOM overlay layer still shows drift.
 
 ## Run / Verify
 
@@ -114,7 +184,7 @@ npm.cmd run build
 Lint target file:
 
 ```powershell
-node node_modules\eslint\bin\eslint.js src\App.jsx
+node node_modules\eslint\bin\eslint.js src\App.jsx vite.config.js
 ```
 
 Build check without touching deploy output:

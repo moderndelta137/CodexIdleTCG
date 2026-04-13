@@ -120,10 +120,125 @@ const BANNER_DEFS = [
 ];
 const BANNER_MAP = Object.fromEntries(BANNER_DEFS.map((banner) => [banner.id, banner]));
 const RARITY_PULL_WEIGHTS = { common: 74, rare: 21, epic: 4.25, legendary: 0.75 };
-const GACHA_TABS = [
-  { id: 'synthesis', name: 'Forge Node', accent: 'violet', icon: Layers, kind: 'synthesis' },
-  ...BANNER_DEFS.map((banner) => ({ ...banner, kind: 'banner' })),
+const FEATURE_LABELS = {
+  skills: 'Skill Architecture',
+  shop: 'Data Shop',
+  codex: 'Codex',
+  upgrades: 'Card Upgrades',
+  banner_support: 'Recovery Protocol',
+  banner_multihit: 'Flurry Engine',
+  pull_5: 'Pull x5',
+  pull_10: 'Pull x10',
+};
+const STAGE_DEFS = {
+  1: {
+    id: 1,
+    name: 'Stage 1',
+    era: 'Spire Protocol',
+    summary: 'Early deckbuilding progression with simple combat economy, upgrades, and pack unlocks.',
+  },
+  2: {
+    id: 2,
+    name: 'Stage 2',
+    era: 'Chromatic Grid',
+    summary: 'Mana systems, higher pull counts, and more automation-oriented progression.',
+  },
+  3: {
+    id: 3,
+    name: 'Stage 3',
+    era: 'Summon Lattice',
+    summary: 'Extra-deck style systems, larger health scales, and enemy interference gimmicks.',
+  },
+  4: {
+    id: 4,
+    name: 'Stage 4',
+    era: 'Astra Warp',
+    summary: 'Character-driven meta systems, stickers, and full gacha-era progression.',
+  },
+};
+const buildDungeonNodes = (totalRooms, specialNodes) => {
+  const specialMap = new Map(specialNodes.map((node) => [node.room, node.value]));
+  return Array.from({ length: totalRooms }, (_, index) => {
+    const room = index + 1;
+    if (specialMap.has(room)) return specialMap.get(room);
+    return room % 10 === 0 ? 'boss' : room % 7 === 0 ? 'rest' : room % 5 === 0 ? 'treasure' : 'encounter';
+  });
+};
+const DUNGEON_DEFS = [
+  {
+    id: 'null_corridor',
+    stage: 1,
+    name: 'Null Corridor',
+    description: 'A short breach route that establishes the first layer of permanent systems.',
+    nodes: buildDungeonNodes(30, [
+      { room: 3, value: { type: 'unlock_feature', feature: 'skills', label: 'Unlock: Skills' } },
+      { room: 6, value: { type: 'unlock_feature', feature: 'shop', label: 'Unlock: Shop' } },
+      { room: 9, value: { type: 'unlock_feature', feature: 'codex', label: 'Unlock: Codex' } },
+      { room: 14, value: { type: 'unlock_feature', feature: 'upgrades', label: 'Unlock: Upgrades' } },
+      { room: 18, value: { type: 'unlock_feature', feature: 'banner_support', label: 'Unlock: Recovery Protocol' } },
+      { room: 23, value: { type: 'unlock_feature', feature: 'banner_multihit', label: 'Unlock: Flurry Engine' } },
+      { room: 27, value: { type: 'unlock_feature', feature: 'pull_5', label: 'Unlock: Pull x5' } },
+    ]),
+    unlocks: {
+      stages: [2],
+    },
+  },
+  {
+    id: 'prism_archive',
+    stage: 2,
+    name: 'Prism Archive',
+    description: 'A denser route that expands long-run throughput and larger pull bundles.',
+    nodes: buildDungeonNodes(30, [
+      { room: 17, value: { type: 'unlock_feature', feature: 'pull_10', label: 'Unlock: Pull x10' } },
+    ]),
+    unlocks: {
+      stages: [3],
+    },
+  },
+  {
+    id: 'summon_vault',
+    stage: 3,
+    name: 'Summon Vault',
+    description: 'A placeholder route for later summon-era systems and enemy gimmicks.',
+    nodes: buildDungeonNodes(30, []),
+    unlocks: {
+      features: [],
+      stages: [4],
+    },
+  },
 ];
+const DUNGEON_MAP = Object.fromEntries(DUNGEON_DEFS.map((dungeon) => [dungeon.id, dungeon]));
+const SKILL_STAGE_MAP = {
+  hand_size: 1,
+  opening_hand: 1,
+  start_mana: 1,
+  dmg_boost: 1,
+  draw_multi: 1,
+  start_mana_card: 1,
+  first_strike: 1,
+  heavy_strike: 1,
+  boss_slayer: 1,
+  shield_boost: 1,
+  passive_flow: 1,
+  kinetic_mana: 1,
+  heavy_armor: 1,
+  free_util: 1,
+  overkill: 1,
+  multi_strike: 1,
+  auto_play_mana: 2,
+  mana_retain: 2,
+  mana_surge: 2,
+  free_low_cost: 2,
+  auto_draw: 2,
+  draw_on_atk: 2,
+  auto_gen: 2,
+  mana_refund: 2,
+  heal_boost: 2,
+  mana_retain_full: 2,
+  overkill_chain: 2,
+  deck_master: 2,
+};
+const getSkillStage = (skillId) => SKILL_STAGE_MAP[skillId] || 1;
 
 const loadGameData = async () => {
   try {
@@ -279,8 +394,12 @@ const shuffle = (array) => {
 };
 
 const DEFAULT_META = {
+    saveVersion: 2,
+    stage: 1,
+    unlockedStages: [1],
+    unlockedFeatures: [],
+    completedDungeons: [],
     gp: 0, fragments: 0, packs: 0,
-    unlockedSkillsFeature: false, unlockedShopFeature: false,
     maxHand: 5, openingHand: 5,
     startMana: 0, regenRate: 0,
     dmgMod: 0, heavyDmgMod: 0, shieldBoost: 0, healBoost: false,
@@ -530,6 +649,7 @@ const CombatStatusPanel = ({ isPlayer, hp, maxHp, title, showDanger, extraConten
 };
 
 const CombatVfxCanvas = ({ activeEffects, enemyAttackEffects, hitStopUntil, enemyRef }) => {
+    const MAX_CANVAS_PARTICLES = 240;
     const canvasRef = useRef(null);
     const rafRef = useRef(0);
     const resizeObserverRef = useRef(null);
@@ -568,7 +688,11 @@ const CombatVfxCanvas = ({ activeEffects, enemyAttackEffects, hitStopUntil, enem
     }, [enemyRef]);
 
     const pushParticle = useCallback((particle) => {
-        particlesRef.current.push(particle);
+        const particles = particlesRef.current;
+        if (particles.length >= MAX_CANVAS_PARTICLES) {
+            particles.splice(0, Math.max(1, particles.length - MAX_CANVAS_PARTICLES + 1));
+        }
+        particles.push(particle);
     }, []);
 
     const withAlpha = useCallback((rgba, alpha) => {
@@ -829,7 +953,9 @@ const CombatVfxCanvas = ({ activeEffects, enemyAttackEffects, hitStopUntil, enem
             for (const particle of particlesRef.current) {
                 if (now < particle.born + particle.ttl + 20) liveParticles.push(particle);
             }
-            particlesRef.current = liveParticles;
+            particlesRef.current = liveParticles.length > MAX_CANVAS_PARTICLES
+                ? liveParticles.slice(liveParticles.length - MAX_CANVAS_PARTICLES)
+                : liveParticles;
 
             for (const p of particlesRef.current) {
                 const age = Math.max(0, now - p.born);
@@ -1119,14 +1245,14 @@ const CombatVfxCanvas = ({ activeEffects, enemyAttackEffects, hitStopUntil, enem
 const CombatTopMap = React.memo(({ runMap, nodeIndex }) => {
     const startIndex = Math.max(0, nodeIndex - 1);
     const endIndex = Math.min(runMap.length, nodeIndex + 8);
-    const sector = Math.floor(nodeIndex / 10) + 1;
-    const stage = (nodeIndex % 10) + 1;
+    const floor = Math.floor(nodeIndex / 10) + 1;
+    const room = (nodeIndex % 10) + 1;
     const visibleNodes = runMap.slice(startIndex, endIndex);
 
     return (
         <div className="h-16 bg-black/80 border-b border-cyan-800/50 z-20 backdrop-blur-md shrink-0 w-full overflow-hidden relative shadow-[0_5px_20px_rgba(0,255,255,0.05)] flex items-center pl-2">
             <div className="flex items-center justify-center bg-slate-900 border-2 border-cyan-800 shadow-[0_0_15px_rgba(0,255,255,0.2)] px-4 py-2 shrink-0 z-30 mr-4">
-                <span className="text-cyan-400 font-mono font-black text-xl tracking-widest">{sector}-{stage}</span>
+                <span className="text-cyan-400 font-mono font-black text-xl tracking-widest">{floor}-{room}</span>
             </div>
             
             <div className="absolute right-0 w-12 h-full bg-gradient-to-l from-black to-transparent z-20 pointer-events-none" />
@@ -1181,15 +1307,24 @@ export default function App() {
   const [view, setView] = useState('menu');
   const [activeTab, setActiveTab] = useState('trunk'); 
   const [sortMethod, setSortMethod] = useState('cost'); 
+  const gameFrameRef = useRef(null);
+  const [gameFrameRect, setGameFrameRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
   
   const [meta, setMeta] = useState(() => {
     const saved = localStorage.getItem('codexIdleSaveData');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        return { ...DEFAULT_META, ...parsed, 
-            unlockedSkillsFeature: parsed.unlockedSkillsFeature ?? false, 
-            unlockedShopFeature: parsed.unlockedShopFeature ?? false 
+        if ((parsed.saveVersion || 0) < DEFAULT_META.saveVersion) {
+            return { ...DEFAULT_META };
+        }
+        return {
+            ...DEFAULT_META,
+            ...parsed,
+            stage: Math.max(1, parsed.stage || 1),
+            unlockedStages: Array.isArray(parsed.unlockedStages) && parsed.unlockedStages.length > 0 ? parsed.unlockedStages : [1],
+            unlockedFeatures: Array.isArray(parsed.unlockedFeatures) ? parsed.unlockedFeatures : [],
+            completedDungeons: Array.isArray(parsed.completedDungeons) ? parsed.completedDungeons : [],
         };
       } catch(e) { console.error("Failed to load save", e); }
     }
@@ -1221,18 +1356,22 @@ export default function App() {
   useEffect(() => {
       if (view === 'skills') {
           const rafId = requestAnimationFrame(() => {
-              const w = window.innerWidth;
-              const h = window.innerHeight;
+              const frameW = gameFrameRect.width || window.innerWidth;
+              const frameH = gameFrameRect.height || window.innerHeight;
               const canvasSize = 1600;
-              const z = w < 768 ? 0.6 : 0.85;
+              const z = frameW < 768 ? 0.6 : 0.85;
               const headerH = 70;
-              const viewH = h - headerH;
+              const viewH = frameH - headerH;
+              const centerNode = NODE_POS.hand_size;
               setZoom(z);
-              setPan({ x: (w - canvasSize * z) / 2, y: headerH + (viewH - canvasSize * z) / 2 });
+              setPan({
+                  x: frameW / 2 - (canvasSize * (centerNode.x / 100) * z),
+                  y: headerH + viewH / 2 - (canvasSize * (centerNode.y / 100) * z),
+              });
           });
           return () => cancelAnimationFrame(rafId);
       }
-  }, [view]);
+  }, [view, gameFrameRect.width, gameFrameRect.height]);
   
   const [recentAdds, setRecentAdds] = useState([]); 
   const [unlockAnimId, setUnlockAnimId] = useState(null);
@@ -1241,43 +1380,83 @@ export default function App() {
   const [hitStopUntil, setHitStopUntil] = useState(0);
   const [pendingDrawEffects, setPendingDrawEffects] = useState([]);
   const [drawAnimations, setDrawAnimations] = useState([]);
+  const unlockedFeatureSet = useMemo(() => new Set(meta.unlockedFeatures || []), [meta.unlockedFeatures]);
+  const hasFeature = useCallback((featureId) => unlockedFeatureSet.has(featureId), [unlockedFeatureSet]);
+  const visibleSkillEntries = useMemo(
+      () => Object.entries(SKILL_TREE_DICT).filter(([skillId]) => getSkillStage(skillId) <= meta.stage),
+      [meta.stage]
+  );
+  const visibleSkillIds = useMemo(() => new Set(visibleSkillEntries.map(([skillId]) => skillId)), [visibleSkillEntries]);
+  const visibleGachaTabs = useMemo(() => {
+      const tabs = [{ id: 'synthesis', name: 'Forge Node', accent: 'violet', icon: Layers, kind: 'synthesis' }];
+      tabs.push({ ...BANNER_MAP.standard, kind: 'banner' });
+      if (hasFeature('banner_support')) tabs.push({ ...BANNER_MAP.support, kind: 'banner' });
+      if (hasFeature('banner_multihit')) tabs.push({ ...BANNER_MAP.multihit, kind: 'banner' });
+      return tabs;
+  }, [hasFeature]);
+  const unlockedDungeons = useMemo(
+      () => DUNGEON_DEFS.filter((dungeon) => (meta.unlockedStages || []).includes(dungeon.stage)),
+      [meta.unlockedStages]
+  );
 
-  const generateRunMap = (currentMeta) => {
-      const map = [];
-      let combatCount = 0;
-      for (let i = 0; i < 1000; i++) {
-          if (i === 2 && !currentMeta.unlockedSkillsFeature) {
-              map.push({ index: i, id: `node-${i}`, type: 'unlock_skills', label: 'Unlock: Skills' });
-              continue;
+  const buildRunMap = useCallback((dungeonId, currentMeta) => {
+      const dungeon = DUNGEON_MAP[dungeonId];
+      if (!dungeon) return [];
+      return dungeon.nodes.map((node, index) => {
+          if (typeof node === 'string') {
+              const type = node;
+              return {
+                  index,
+                  id: `${dungeonId}-node-${index}`,
+                  type,
+                  label: type === 'boss' ? 'Boss' : type === 'rest' ? 'Rest' : type === 'treasure' ? 'Treasure' : 'Encounter',
+              };
           }
-          if (i === 4 && !currentMeta.unlockedShopFeature) {
-              map.push({ index: i, id: `node-${i}`, type: 'unlock_shop', label: 'Unlock: Shop' });
-              continue;
+          if (node.type === 'unlock_feature' && (currentMeta.unlockedFeatures || []).includes(node.feature)) {
+              return {
+                  index,
+                  id: `${dungeonId}-node-${index}`,
+                  type: 'encounter',
+                  label: 'Encounter',
+              };
           }
+          return {
+              index,
+              id: `${dungeonId}-node-${index}`,
+              ...node,
+              label: node.label || FEATURE_LABELS[node.feature] || 'Unlock',
+          };
+      });
+  }, []);
 
-          if (combatCount % 5 === 4) {
-              map.push({ index: i, id: `node-${i}`, type: 'boss', label: 'Boss' });
-              combatCount++;
-              continue;
-          }
+  const applyRunRewards = useCallback((currentMeta, currentRun, didCompleteDungeon = false) => {
+      const nextMeta = {
+          ...currentMeta,
+          gp: currentMeta.gp + currentRun.gpEarned,
+          fragments: currentMeta.fragments + currentRun.fragsEarned,
+          packs: currentMeta.packs + currentRun.packsEarned,
+      };
+      if (!didCompleteDungeon || !currentRun.dungeonId) return nextMeta;
 
-          const r = Math.random();
-          if (r < 0.05) {
-              map.push({ index: i, id: `node-${i}`, type: 'treasure', label: 'Treasure' });
-          } else if (r < 0.10) {
-              map.push({ index: i, id: `node-${i}`, type: 'rest', label: 'Rest' });
-          } else {
-              map.push({ index: i, id: `node-${i}`, type: 'encounter', label: 'Encounter' });
-              combatCount++;
-          }
-      }
-      return map;
-  };
+      const dungeon = DUNGEON_MAP[currentRun.dungeonId];
+      if (!dungeon) return nextMeta;
+
+      const nextStages = new Set(nextMeta.unlockedStages || [1]);
+      (dungeon.unlocks?.stages || []).forEach((stageId) => nextStages.add(stageId));
+
+      return {
+          ...nextMeta,
+          stage: Math.max(nextMeta.stage || 1, ...Array.from(nextStages)),
+          unlockedStages: Array.from(nextStages).sort((a, b) => a - b),
+          completedDungeons: Array.from(new Set([...(nextMeta.completedDungeons || []), dungeon.id])),
+      };
+  }, []);
 
   const [run, setRun] = useState({
     hp: 50, maxHp: 50, shield: 0, mana: 0, kills: 0, gpEarned: 0, fragsEarned: 0, packsEarned: 0,
     deck: [], hand: [], discard: [], monster: null, isPaused: false, autoDrawTimer: 0, activeEffects: [], enemyAttackEffects: [],
     floatingDrops: [], deathEffect: null, power: 0, runMap: [], nodeIndex: 0, activeEvent: null, eventPopup: null,
+    dungeonId: null, status: 'idle', completionRewards: null,
     cardDamage: {}
   });
   const enemyCardRef = useRef(null);
@@ -1285,13 +1464,37 @@ export default function App() {
   const handCardRefs = useRef(new Map());
   const queuedDrawCardsRef = useRef([]);
 
+  useLayoutEffect(() => {
+      const node = gameFrameRef.current;
+      if (!node) return undefined;
+
+      const updateRect = () => {
+          const rect = node.getBoundingClientRect();
+          setGameFrameRect({
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
+          });
+      };
+
+      updateRect();
+      const observer = new ResizeObserver(() => updateRect());
+      observer.observe(node);
+      window.addEventListener('resize', updateRect);
+      return () => {
+          observer.disconnect();
+          window.removeEventListener('resize', updateRect);
+      };
+  }, []);
+
   useEffect(() => {
      if (run && run.nodeIndex !== undefined) {
-         const sector = Math.floor(run.nodeIndex / 10) + 1;
-         const stage = (run.nodeIndex % 10) + 1;
+         const floor = Math.floor(run.nodeIndex / 10) + 1;
+         const room = (run.nodeIndex % 10) + 1;
          const isBoss = run.runMap && run.runMap[run.nodeIndex]?.type === 'boss';
          const rafId = requestAnimationFrame(() => {
-             setLevelBanner({ sector, stage, isBoss, visible: true });
+             setLevelBanner({ floor, room, isBoss, visible: true });
          });
          const t = setTimeout(() => {
              setLevelBanner(prev => prev ? {...prev, visible: false} : null);
@@ -1538,11 +1741,13 @@ export default function App() {
 
   // --- Actions ---
 
-  const startRun = () => {
+  const startRun = (dungeonId) => {
     if (meta.activeDeck.length < 10) {
         alert("Deck must have at least 10 cards!");
         return;
     }
+    const dungeon = DUNGEON_MAP[dungeonId];
+    if (!dungeon) return;
 
     let deckCards = meta.activeDeck.map((id, idx) => {
         const lvl = getCardLevel(id);
@@ -1565,7 +1770,7 @@ export default function App() {
     const initialDraw = Math.min(meta.openingHand, meta.maxHand);
     while (hand.length < initialDraw && deck.length > 0) hand.push(deck.pop());
 
-    const freshMap = generateRunMap(meta);
+    const freshMap = buildRunMap(dungeonId, meta);
     const firstNode = freshMap[0];
     
     let initialMonster = null;
@@ -1580,6 +1785,7 @@ export default function App() {
       hp: 50, maxHp: 50, shield: 0, mana: meta.startMana, kills: 0, gpEarned: 0, fragsEarned: 0, packsEarned: 0,
       deck, hand, discard: [], monster: initialMonster, isPaused: false, autoDrawTimer: 0, activeEffects: [], enemyAttackEffects: [], floatingDrops: [], deathEffect: null, power: 0,
       runMap: freshMap, nodeIndex: 0, activeEvent: initialEvent, eventPopup: null,
+      dungeonId, status: 'active', completionRewards: dungeon.unlocks || null,
       cardDamage: {}
     });
     setIsDiscardMode(false);
@@ -1623,14 +1829,11 @@ export default function App() {
                 for(let i=0; i<5; i++) newDrops.push({ id: Math.random(), type: 'pack', val: null, delay: i*120 });
                 newDrops.push({ id: Math.random(), type: 'pack', val: '+3 Packs', delay: 200, isLabel: true });
             }
-        } else if (currentEvent.type === 'unlock_skills') {
-            popupData.text = "System override successful.";
-            popupData.loot.push("Skill Architecture Unlocked");
-            newDrops.push({ id: Math.random(), type: 'unlock', val: 'SKILLS', delay: 0 });
-        } else if (currentEvent.type === 'unlock_shop') {
-            popupData.text = "Network connection established.";
-            popupData.loot.push("Data Shop Unlocked");
-            newDrops.push({ id: Math.random(), type: 'unlock', val: 'SHOP', delay: 0 });
+        } else if (currentEvent.type === 'unlock_feature') {
+            const featureLabel = FEATURE_LABELS[currentEvent.feature] || currentEvent.label || 'System';
+            popupData.text = "A new subsystem has been integrated into the run.";
+            popupData.loot.push(`${featureLabel} Unlocked`);
+            newDrops.push({ id: Math.random(), type: 'unlock', val: featureLabel, delay: 0 });
         }
 
         next.floatingDrops = [...(next.floatingDrops||[]), ...newDrops.map(d => ({
@@ -1645,11 +1848,18 @@ export default function App() {
   const closeEventPopup = () => {
     setRun(prev => {
         let next = { ...prev };
-        
-        if (next.eventPopup?.type === 'unlock_skills') {
-            setMeta(m => ({...m, unlockedSkillsFeature: true}));
-        } else if (next.eventPopup?.type === 'unlock_shop') {
-            setMeta(m => ({...m, unlockedShopFeature: true}));
+        const unlockedFeatureId = next.eventPopup?.type === 'unlock_feature' ? next.activeEvent?.feature : null;
+
+        if (unlockedFeatureId) {
+            queueMicrotask(() => {
+                setMeta((currentMeta) => {
+                    if ((currentMeta.unlockedFeatures || []).includes(unlockedFeatureId)) return currentMeta;
+                    return {
+                        ...currentMeta,
+                        unlockedFeatures: [...(currentMeta.unlockedFeatures || []), unlockedFeatureId],
+                    };
+                });
+            });
         }
 
         next.eventPopup = null;
@@ -1657,6 +1867,16 @@ export default function App() {
         next.nodeIndex += 1;
         
         const nextNode = next.runMap[next.nodeIndex];
+        if (!nextNode) {
+            next.monster = null;
+            next.isPaused = true;
+            next.status = 'victory';
+            queueMicrotask(() => {
+                setMeta((currentMeta) => applyRunRewards(currentMeta, next, true));
+                setView('gameover');
+            });
+            return next;
+        }
         
         if (nextNode.type === 'encounter' || nextNode.type === 'boss') {
             next.monster = generateMonster(next.kills, nextNode.type === 'boss');
@@ -1801,6 +2021,18 @@ export default function App() {
         nextRun.mana = Math.floor(nextRun.mana * meta.manaRetain) + meta.startMana;
         nextRun.shield = 0;
         nextRun.power = 0;
+
+        if (!nextNode) {
+            nextRun.monster = null;
+            nextRun.activeEvent = null;
+            nextRun.isPaused = true;
+            nextRun.status = 'victory';
+            queueMicrotask(() => {
+                setMeta((currentMeta) => applyRunRewards(currentMeta, nextRun, true));
+                setView('gameover');
+            });
+            break;
+        }
         
         if (nextNode.type === 'encounter' || nextNode.type === 'boss') {
             nextRun.monster = generateMonster(nextRun.kills, nextNode.type === 'boss');
@@ -1852,7 +2084,7 @@ export default function App() {
       setFrameNow(now);
       setRun(prev => {
         if (prev.hp <= 0) {
-            setMeta(m => ({ ...m, gp: m.gp + prev.gpEarned, fragments: m.fragments + prev.fragsEarned, packs: m.packs + prev.packsEarned }));
+            setMeta(m => applyRunRewards(m, prev, false));
             setView('gameover');
             return prev;
         }
@@ -1933,7 +2165,7 @@ export default function App() {
     lastUpdate.current = Date.now();
     timerRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(timerRef.current);
-  }, [view, run.isPaused, meta.regenRate, meta.autoDrawRate, meta.autoPlayMana, meta.maxHand, meta.kineticMana, meta.manaRefund, meta.manaSurge, drawCardsWithMeta, getEffectiveCost, hitStopUntil]);
+  }, [view, run.isPaused, meta.regenRate, meta.autoDrawRate, meta.autoPlayMana, meta.maxHand, meta.kineticMana, meta.manaRefund, meta.manaSurge, drawCardsWithMeta, getEffectiveCost, hitStopUntil, applyRunRewards]);
 
 
   // --- Gacha & Upgrades ---
@@ -1946,6 +2178,10 @@ export default function App() {
 
   const openPack = useCallback((bannerId, count = 1) => {
       const banner = BANNER_MAP[bannerId] || BANNER_MAP.standard;
+      if (banner.id === 'support' && !hasFeature('banner_support')) return;
+      if (banner.id === 'multihit' && !hasFeature('banner_multihit')) return;
+      if (count >= 10 && !hasFeature('pull_10')) return;
+      if (count >= 5 && count < 10 && !hasFeature('pull_5')) return;
       const actualCount = Math.min(count, meta.packs);
       if (actualCount > 0) {
           const newCards = [];
@@ -1965,7 +2201,7 @@ export default function App() {
               return { ...prev, packs: prev.packs - actualCount, collection: newCollection };
           });
       }
-  }, [pickWeightedCardId, meta.packs]);
+  }, [pickWeightedCardId, meta.packs, hasFeature]);
 
   const upgradeCard = (id) => {
       const lvl = getCardLevel(id);
@@ -2150,11 +2386,11 @@ export default function App() {
 
   // --- Derived State for Menu Notifications ---
   const canUnlockSkill = useMemo(() => {
-    return Object.values(SKILL_TREE_DICT).some(skill => {
+    return visibleSkillEntries.some(([, skill]) => {
         const reqsMet = skill.requiresAny.length === 0 || skill.requiresAny.some(req => meta.unlockedSkills.includes(req));
         return meta.gp >= skill.cost && reqsMet && !meta.unlockedSkills.includes(skill.id);
     });
-  }, [meta.gp, meta.unlockedSkills]);
+  }, [meta.gp, meta.unlockedSkills, visibleSkillEntries]);
 
   const canUpgradeCard = useMemo(() => {
     return Object.keys(CARD_DB).some(id => {
@@ -2171,15 +2407,26 @@ export default function App() {
   const hasPacks = meta.packs > 0 || meta.fragments >= 10;
   const activeDeathEffect = run.deathEffect && frameNow - run.deathEffect.timestamp < 720 ? run.deathEffect : null;
   const deathMonsterIconType = activeDeathEffect ? getMonsterIcon(activeDeathEffect.monster) : null;
-  const activeGachaTab = GACHA_TABS.find((tab) => tab.id === activeGachaTabId) || GACHA_TABS[0];
+  const resolvedActiveGachaTabId = visibleGachaTabs.some((tab) => tab.id === activeGachaTabId) ? activeGachaTabId : (visibleGachaTabs[0]?.id || 'synthesis');
+  const activeGachaTab = visibleGachaTabs.find((tab) => tab.id === resolvedActiveGachaTabId) || visibleGachaTabs[0];
   const activeBanner = activeGachaTab.kind === 'banner' ? (BANNER_MAP[activeGachaTab.id] || BANNER_MAP.standard) : null;
   const lastOpenedBanner = BANNER_MAP[lastOpenedBannerId] || BANNER_MAP.standard;
   const previewBanner = previewBannerId ? (BANNER_MAP[previewBannerId] || null) : null;
 
   // --- Views ---
 
+  const enterDungeonFlow = () => {
+    if (unlockedDungeons.length <= 1) {
+      const onlyDungeon = unlockedDungeons[0];
+      if (onlyDungeon) startRun(onlyDungeon.id);
+      return;
+    }
+    setView('dungeons');
+  };
+
   const renderMenu = () => {
     const btnBase = "w-full flex items-center justify-center gap-3 p-4 rounded font-black uppercase tracking-widest transition-all backdrop-blur-sm bg-slate-900 border text-slate-300 shadow-md";
+    const currentStage = STAGE_DEFS[meta.stage] || STAGE_DEFS[1];
     
     return (
     <div className="flex flex-col items-center justify-center h-full space-y-12 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900 via-blue-950 to-black text-white p-6 relative overflow-hidden font-tech">
@@ -2190,44 +2437,41 @@ export default function App() {
         <h1 className="text-5xl md:text-7xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white via-cyan-100 to-cyan-500 drop-shadow-[0_0_20px_rgba(0,255,255,0.5)] leading-tight">
           CODEX DUELIST
         </h1>
-        <p className="text-cyan-400 tracking-[0.5em] text-[10px] md:text-xs mt-2 md:mt-4 font-bold uppercase drop-shadow-[0_0_5px_rgba(0,255,255,0.8)]">Master System Ready</p>
+        <p className="text-cyan-400 tracking-[0.35em] text-[10px] md:text-xs mt-2 md:mt-4 font-bold uppercase drop-shadow-[0_0_5px_rgba(0,255,255,0.8)]">
+          {currentStage.name} · {currentStage.era}
+        </p>
       </div>
 
       <div className="flex flex-col items-center gap-4 w-full max-w-sm relative z-10">
-        <button onClick={startRun} className={`${btnBase} border-slate-700 hover:border-cyan-400 hover:text-cyan-400 hover:shadow-[0_0_20px_rgba(34,211,238,0.5)] group overflow-hidden relative`}>
+        <button onClick={enterDungeonFlow} className={`${btnBase} border-slate-700 hover:border-cyan-400 hover:text-cyan-400 hover:shadow-[0_0_20px_rgba(34,211,238,0.5)] group overflow-hidden relative`}>
           <div className="absolute inset-0 bg-white/10 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-500" />
           <Play className="group-hover:scale-125 transition-transform drop-shadow-md" fill="currentColor" />
-          ENTER LINK VRAINS
+          {unlockedDungeons.length > 1 ? 'DUNGEON SELECT' : 'ENTER LINK VRAINS'}
         </button>
-        
+
         <button onClick={() => { setView('deck'); setActiveTab('trunk'); }} className={`${btnBase} border-slate-700 hover:border-purple-400 hover:text-purple-400 hover:shadow-[0_0_20px_rgba(168,85,247,0.5)]`}>
           <Layers size={18} /> DECK EDIT
         </button>
 
-        {meta.unlockedSkillsFeature ? (
+        {hasFeature('skills') && (
             <button onClick={() => setView('skills')} className={`${btnBase} ${canUnlockSkill ? 'border-blue-500 text-blue-100 shadow-[0_0_20px_rgba(59,130,246,0.6)] animate-pulse ring-1 ring-blue-400 hover:border-blue-400 hover:text-blue-400 hover:shadow-[0_0_30px_rgba(59,130,246,0.8)]' : 'border-slate-700 hover:border-blue-400 hover:text-blue-400 hover:shadow-[0_0_15px_rgba(59,130,246,0.4)]'}`}>
               <ArrowUpCircle size={18} /> SKILLS
             </button>
-        ) : (
-            <button disabled className={`${btnBase} border-slate-800 text-slate-700 cursor-not-allowed opacity-60`}>
-              <Lock size={18} /> SKILLS (LOCKED)
+        )}
+
+        {hasFeature('codex') && (
+            <button onClick={() => { setView('codex'); setActiveTab('trunk'); }} className={`${btnBase} ${hasFeature('upgrades') && canUpgradeCard ? 'border-emerald-500 text-emerald-100 shadow-[0_0_20px_rgba(16,185,129,0.6)] animate-pulse ring-1 ring-emerald-400 hover:border-emerald-400 hover:text-emerald-400 hover:shadow-[0_0_30px_rgba(16,185,129,0.8)]' : 'border-slate-700 hover:border-emerald-400 hover:text-emerald-400 hover:shadow-[0_0_15px_rgba(16,185,129,0.4)]'}`}>
+              <Library size={18} /> CODEX
             </button>
         )}
 
-        <button onClick={() => { setView('codex'); setActiveTab('trunk'); }} className={`${btnBase} ${canUpgradeCard ? 'border-emerald-500 text-emerald-100 shadow-[0_0_20px_rgba(16,185,129,0.6)] animate-pulse ring-1 ring-emerald-400 hover:border-emerald-400 hover:text-emerald-400 hover:shadow-[0_0_30px_rgba(16,185,129,0.8)]' : 'border-slate-700 hover:border-emerald-400 hover:text-emerald-400 hover:shadow-[0_0_15px_rgba(16,185,129,0.4)]'}`}>
-          <Library size={18} /> CODEX (UPGRADES)
-        </button>
-
-        {meta.unlockedShopFeature ? (
+        {hasFeature('shop') && (
             <button onClick={() => setView('gacha')} className={`${btnBase} ${hasPacks ? 'border-amber-500 text-amber-100 shadow-[0_0_20px_rgba(245,158,11,0.6)] animate-pulse ring-1 ring-amber-400 hover:border-amber-400 hover:text-amber-400 hover:shadow-[0_0_30px_rgba(245,158,11,0.8)]' : 'border-slate-700 hover:border-amber-400 hover:text-amber-400 hover:shadow-[0_0_15px_rgba(245,158,11,0.4)]'}`}>
-              <Package size={20} /> SHOP & PACKS
-            </button>
-        ) : (
-            <button disabled className={`${btnBase} border-slate-800 text-slate-700 cursor-not-allowed opacity-60`}>
-              <Lock size={18} /> SHOP (LOCKED)
+                <Package size={20} /> SHOP & PACKS
             </button>
         )}
-        <button onClick={() => { if(confirm("Are you sure you want to completely erase your save data?")) { localStorage.clear(); window.location.reload(); } }} className={`${btnBase} border-red-900 hover:border-red-500 text-red-500 mt-8`}>
+
+        <button onClick={() => { if(confirm("Are you sure you want to completely erase your save data?")) { localStorage.clear(); window.location.reload(); } }} className={`${btnBase} border-red-900 hover:border-red-500 text-red-500 mt-4`}>
            <Trash2 size={16} /> RESET SAVE DATA
         </button>
       </div>
@@ -2239,6 +2483,74 @@ export default function App() {
       </div>
     </div>
   )};
+
+  const renderDungeonSelect = () => {
+    const btnBase = "w-full flex items-center justify-center gap-3 p-4 rounded font-black uppercase tracking-widest transition-all backdrop-blur-sm bg-slate-900 border text-slate-300 shadow-md";
+    const currentStage = STAGE_DEFS[meta.stage] || STAGE_DEFS[1];
+
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900 via-blue-950 to-black text-white p-6 relative overflow-hidden font-tech">
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.02)_1px,transparent_1px)] bg-[size:3rem_3rem] pointer-events-none" />
+        <div className="w-full max-w-3xl relative z-10">
+          <div className="flex items-center justify-between mb-6">
+            <button onClick={() => setView('menu')} className="flex items-center gap-2 text-cyan-400 hover:text-white uppercase font-black text-xs sm:text-sm tracking-widest">
+              <ArrowLeft size={16} /> Hub
+            </button>
+            <div className="text-right">
+              <div className="text-[10px] uppercase tracking-[0.28em] text-cyan-500 font-black">Dungeon Select</div>
+              <div className="text-lg sm:text-2xl font-black text-white mt-1">{currentStage.name}</div>
+            </div>
+          </div>
+
+          <div className="grid gap-4">
+            {unlockedDungeons.map((dungeon) => {
+              const isCompleted = (meta.completedDungeons || []).includes(dungeon.id);
+              return (
+                <button
+                  key={dungeon.id}
+                  onClick={() => startRun(dungeon.id)}
+                  className="w-full text-left rounded-xl border border-slate-700 bg-slate-900/80 px-5 py-5 hover:border-cyan-400 hover:text-white transition-all shadow-[0_0_20px_rgba(15,23,42,0.5)]"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Play size={16} className="text-cyan-400" fill="currentColor" />
+                        <span className="text-xl font-black text-white">{dungeon.name}</span>
+                        {isCompleted ? (
+                          <span className="px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-300 text-[10px] uppercase tracking-[0.2em] font-black border border-emerald-500/30">
+                            Cleared
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 text-sm text-slate-400">{dungeon.description}</p>
+                      <div className="mt-3 text-[10px] uppercase tracking-[0.24em] text-slate-500">
+                        Route unlocks: {dungeon.nodes
+                          .filter((node) => typeof node === 'object' && node.type === 'unlock_feature' && !(meta.unlockedFeatures || []).includes(node.feature))
+                          .map((node) => FEATURE_LABELS[node.feature] || node.label || node.feature)
+                          .join(' · ') || 'Resource income only'}
+                      </div>
+                      <div className="mt-1 text-[10px] uppercase tracking-[0.24em] text-slate-600">
+                        Clear reward: {[
+                          ...(dungeon.unlocks?.stages || []).map((stageId) => STAGE_DEFS[stageId] ? `${STAGE_DEFS[stageId].name}` : `Stage ${stageId}`),
+                        ].join(' · ') || 'None'}
+                      </div>
+                    </div>
+                    <ChevronRight size={22} className="text-cyan-400 shrink-0" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-6">
+            <button onClick={() => setView('menu')} className={`${btnBase} border-slate-700 hover:border-cyan-400 hover:text-cyan-400`}>
+              <ArrowLeft size={16} /> RETURN
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const renderCombat = () => {
     if (!run.runMap || run.runMap.length === 0) return null;
@@ -2316,7 +2628,7 @@ export default function App() {
                  <div className="bg-[#1a110a] border-4 border-[#4a3222] shadow-[0_0_30px_rgba(255,100,50,0.2)] p-2 sm:p-8 flex flex-col gap-4 rounded-sm min-w-[200px] sm:min-w-[300px]">
                      <h2 className="text-white text-2xl sm:text-3xl font-black text-center mb-4 sm:mb-6 tracking-widest border-b-2 border-[#4a3222] pb-4">OPTIONS</h2>
                      <button className="bg-slate-800/50 border border-slate-600 text-slate-400 p-2 sm:p-4 font-bold opacity-50 cursor-not-allowed">Volume: 100% (WIP)</button>
-                     <button onClick={() => { setShowOptions(false); setMeta(m => ({ ...m, gp: m.gp + run.gpEarned, fragments: m.fragments + run.fragsEarned, packs: m.packs + run.packsEarned })); setView('gameover'); }} className="bg-red-900 border border-red-500 text-white p-2 sm:p-4 font-black tracking-widest hover:bg-red-800 shadow-[inset_0_0_10px_rgba(0,0,0,0.8)]">END RUN</button>
+                     <button onClick={() => { setShowOptions(false); setMeta(m => applyRunRewards(m, run, false)); setView('gameover'); }} className="bg-red-900 border border-red-500 text-white p-2 sm:p-4 font-black tracking-widest hover:bg-red-800 shadow-[inset_0_0_10px_rgba(0,0,0,0.8)]">END RUN</button>
                      <button onClick={() => setShowOptions(false)} className="bg-cyan-900/60 border border-cyan-700 text-white p-2 sm:p-4 font-bold hover:bg-cyan-800 mt-2 sm:mt-4">RESUME</button>
                  </div>
               </div>
@@ -2326,7 +2638,7 @@ export default function App() {
              <div className="absolute top-[25%] left-1/2 -translate-x-1/2 pointer-events-none z-[100] w-full flex justify-center">
                  <div className={`px-16 py-6 border-y-4 shadow-2xl flex flex-col items-center animate-[loot-fountain_2s_ease-in-out_forwards] backdrop-blur-md ${levelBanner.isBoss ? 'bg-red-900/80 border-red-500 shadow-[0_0_50px_rgba(255,0,0,0.8)]' : 'bg-black/90 border-cyan-500 shadow-[0_0_50px_rgba(0,255,255,0.4)]'}`}>
                      <span className={`text-4xl sm:text-6xl font-black tracking-[0.2em] ${levelBanner.isBoss ? 'text-red-400 drop-shadow-[0_0_15px_rgba(255,0,0,1)]' : 'text-cyan-400 drop-shadow-[0_0_15px_rgba(0,255,255,1)]'}`}>
-                         {levelBanner.isBoss ? 'WARNING: BOSS' : `SECTOR ${levelBanner.sector}-${levelBanner.stage}`}
+                         {levelBanner.isBoss ? 'WARNING: BOSS' : `FLOOR ${levelBanner.floor}-${levelBanner.room}`}
                      </span>
                  </div>
              </div>
@@ -2668,6 +2980,7 @@ export default function App() {
 
     const renderNode = (skillKey) => {
         const skill = SKILL_TREE_DICT[skillKey];
+        if (!skill || !visibleSkillIds.has(skillKey)) return null;
         const isUnlocked = meta.unlockedSkills.includes(skill.id);
         const reqsMet = skill.requiresAny.length === 0 || skill.requiresAny.some(req => meta.unlockedSkills.includes(req));
         const canAfford = meta.gp >= skill.cost && reqsMet;
@@ -2709,9 +3022,9 @@ export default function App() {
     };
 
     const lines = [];
-    Object.values(SKILL_TREE_DICT).forEach(skill => {
+    visibleSkillEntries.forEach(([, skill]) => {
         (skill.requiresAny || []).forEach(req => {
-            lines.push({ from: req, to: skill.id });
+            if (visibleSkillIds.has(req)) lines.push({ from: req, to: skill.id });
         });
     });
 
@@ -2793,7 +3106,7 @@ export default function App() {
                             );
                         })}
                     </svg>
-                    {Object.keys(SKILL_TREE_DICT).map(key => renderNode(key))}
+                    {visibleSkillEntries.map(([key]) => renderNode(key))}
                 </div>
             </div>
             
@@ -3009,26 +3322,27 @@ export default function App() {
 
                         return (
                         <div onClick={(e) => e.stopPropagation()} className="flex flex-col items-center w-full relative">
-                            {upgradeAnimId === activeDisplayId && (
-                                <div className="absolute inset-0 pointer-events-none z-50 flex items-center justify-center">
-                                    {/* Soft green glow backdrop */}
-                                    <div className="absolute w-60 h-80 bg-emerald-500/30 rounded-2xl blur-3xl animate-[upgrade-burst_1.2s_ease-out_forwards]" />
-                                    {/* Expanding ring */}
-                                    <div className="absolute w-52 h-72 border-4 border-emerald-400 rounded-lg animate-[upgrade-ring_0.8s_ease-out_forwards]" />
-                                    <div className="absolute w-52 h-72 border-4 border-cyan-300 rounded-lg animate-[upgrade-ring_0.8s_ease-out_forwards]" style={{animationDelay:'0.15s'}} />
-                                    {/* Diagonal shine sweep */}
-                                    <div className="absolute w-52 h-72 rounded-lg overflow-hidden">
-                                        <div className="absolute inset-0 w-[60px] h-full bg-gradient-to-r from-transparent via-white/60 to-transparent animate-[upgrade-shine_0.6s_ease-in-out_forwards]" style={{animationDelay:'0.2s'}} />
+                            <div className="relative inline-flex rounded-lg z-10">
+                                {upgradeAnimId === activeDisplayId && (
+                                    <div className="absolute inset-0 pointer-events-none z-50">
+                                        <div className="absolute -inset-6 bg-emerald-500/30 rounded-[1.5rem] blur-3xl animate-[upgrade-burst_1.2s_ease-out_forwards]" />
+                                        <div className="absolute -inset-2 border-4 border-emerald-400 rounded-lg animate-[upgrade-ring_0.8s_ease-out_forwards]" />
+                                        <div className="absolute -inset-2 border-4 border-cyan-300 rounded-lg animate-[upgrade-ring_0.8s_ease-out_forwards]" style={{animationDelay:'0.15s'}} />
+                                        <div className="absolute -inset-2 rounded-lg overflow-hidden">
+                                            <div className="absolute inset-0 w-[60px] h-full bg-gradient-to-r from-transparent via-white/60 to-transparent animate-[upgrade-shine_0.6s_ease-in-out_forwards]" style={{animationDelay:'0.2s'}} />
+                                        </div>
+                                        {[...Array(8)].map((_, i) => (
+                                            <div
+                                                key={i}
+                                                className="absolute w-1.5 h-1.5 bg-emerald-300 rounded-full shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-[upgrade-burst_0.8s_ease-out_forwards]"
+                                                style={{animationDelay:`${i*0.08}s`, left:`${18+Math.random()*64}%`, top:`${10+Math.random()*78}%`}}
+                                            />
+                                        ))}
                                     </div>
-                                    {/* Cyber particles */}
-                                    {[...Array(8)].map((_, i) => (
-                                        <div key={i} className="absolute w-1.5 h-1.5 bg-emerald-300 rounded-full shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-[upgrade-burst_0.8s_ease-out_forwards]" 
-                                             style={{animationDelay:`${i*0.08}s`, left:`${30+Math.random()*40}%`, top:`${20+Math.random()*60}%`}} />
-                                    ))}
+                                )}
+                                <div className="animate-pulse shadow-[0_0_30px_rgba(0,255,255,0.2)] rounded-lg">
+                                    <Card cardId={activeDisplayId} scale={1.5} level={lvl} overrideValue={getCardValue(CARD_DB[activeDisplayId], lvl)} />
                                 </div>
-                            )}
-                            <div className="animate-pulse shadow-[0_0_30px_rgba(0,255,255,0.2)] rounded-lg z-10">
-                                <Card cardId={activeDisplayId} scale={1.5} level={lvl} overrideValue={getCardValue(CARD_DB[activeDisplayId], lvl)} />
                             </div>
                             <div className="mt-6 w-full border-t border-cyan-900/50 pt-4 flex flex-col items-center z-10">
                                 <h3 className="text-xl font-black text-cyan-400 uppercase tracking-widest text-center">{CARD_DB[activeDisplayId].name}</h3>
@@ -3334,7 +3648,7 @@ export default function App() {
                                   <div className="lg:w-[6.5rem] shrink-0 border-b lg:border-b-0 lg:border-r border-white/8 bg-black/35">
                                       <div className={`absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b ${accentClasses.rail} hidden lg:block`} />
                                       <div className="flex lg:flex-col gap-2 p-3 sm:p-4 overflow-x-auto lg:overflow-visible">
-                                          {GACHA_TABS.map((tab) => {
+                                          {visibleGachaTabs.map((tab) => {
                                               const isActive = tab.id === activeGachaTabId;
                                               const RailIcon = tab.icon;
                                               return (
@@ -3475,13 +3789,24 @@ export default function App() {
                                                           >
                                                               Pull x1
                                                           </button>
-                                                          <button
-                                                              onClick={() => openPack(activeBanner.id, 10)}
-                                                              disabled={meta.packs < 10}
-                                                              className={`px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.packs >= 10 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
-                                                          >
-                                                              Pull x10
-                                                          </button>
+                                                          {hasFeature('pull_5') && (
+                                                              <button
+                                                                  onClick={() => openPack(activeBanner.id, 5)}
+                                                                  disabled={meta.packs < 5}
+                                                                  className={`px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.packs >= 5 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
+                                                              >
+                                                                  Pull x5
+                                                              </button>
+                                                          )}
+                                                          {hasFeature('pull_10') && (
+                                                              <button
+                                                                  onClick={() => openPack(activeBanner.id, 10)}
+                                                                  disabled={meta.packs < 10}
+                                                                  className={`px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.packs >= 10 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
+                                                              >
+                                                                  Pull x10
+                                                              </button>
+                                                          )}
                                                       </>
                                                   ) : (
                                                       <button
@@ -3506,12 +3831,15 @@ export default function App() {
   }
 
   const renderGameOver = () => {
-      const sector = Math.floor(run.nodeIndex / 10) + 1;
-      const stage = (run.nodeIndex % 10) + 1;
+      const dungeon = run.dungeonId ? DUNGEON_MAP[run.dungeonId] : null;
       const topCards = Object.entries(run.cardDamage || {})
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3);
       const maxDmg = topCards.length > 0 ? topCards[0][1] : 1;
+      const didCompleteDungeon = run.status === 'victory';
+      const unlockLines = didCompleteDungeon && dungeon ? [
+          ...(dungeon.unlocks?.stages || []).map((stageId) => STAGE_DEFS[stageId] ? `${STAGE_DEFS[stageId].name}` : `Stage ${stageId}`),
+      ] : [];
 
       return (
           <div className="flex flex-col items-center justify-start h-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900 via-red-950/30 to-black text-white p-4 sm:p-8 relative overflow-y-auto font-tech">
@@ -3520,19 +3848,34 @@ export default function App() {
               <div className="relative z-10 flex flex-col items-center w-full max-w-lg mt-8">
                   {/* Title */}
                   <h1 className="text-4xl sm:text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-red-400 via-red-500 to-red-800 drop-shadow-[0_0_20px_rgba(255,0,0,0.5)] mb-2">
-                      RUN OVER
+                      {didCompleteDungeon ? 'DUNGEON CLEARED' : 'RUN OVER'}
                   </h1>
-                  <p className="text-red-400/60 tracking-[0.5em] text-[10px] uppercase font-bold mb-8">CONNECTION LOST</p>
+                  <p className="text-red-400/60 tracking-[0.35em] text-[10px] uppercase font-bold mb-8">
+                      {didCompleteDungeon ? `${dungeon?.name || 'Route'} complete` : 'Connection lost'}
+                  </p>
 
                   {/* Progress */}
                   <div className="w-full bg-black/60 border border-slate-800 rounded-sm p-4 sm:p-6 mb-4">
                       <h3 className="text-xs uppercase text-slate-500 font-bold tracking-widest mb-4">Progress</h3>
                       <div className="grid grid-cols-3 gap-4 text-center">
-                          <div><div className="text-2xl sm:text-3xl font-black text-cyan-400">{sector}-{stage}</div><div className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Sector</div></div>
+                          <div><div className="text-xl sm:text-2xl font-black text-cyan-400">{dungeon ? dungeon.name : `Node ${run.nodeIndex}`}</div><div className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Route</div></div>
                           <div><div className="text-2xl sm:text-3xl font-black text-red-400">{run.kills}</div><div className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Kills</div></div>
                           <div><div className="text-2xl sm:text-3xl font-black text-white">{run.nodeIndex}</div><div className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Nodes</div></div>
                       </div>
                   </div>
+
+                  {unlockLines.length > 0 && (
+                      <div className="w-full bg-black/60 border border-cyan-900/70 rounded-sm p-4 sm:p-6 mb-4">
+                          <h3 className="text-xs uppercase text-slate-500 font-bold tracking-widest mb-4">Clear Reward</h3>
+                          <div className="flex flex-wrap gap-2">
+                              {unlockLines.map((line) => (
+                                  <div key={line} className="px-3 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 text-xs uppercase tracking-[0.18em] font-black">
+                                      {line}
+                                  </div>
+                              ))}
+                          </div>
+                      </div>
+                  )}
 
                   {/* Resources */}
                   <div className="w-full bg-black/60 border border-slate-800 rounded-sm p-4 sm:p-6 mb-4">
@@ -3594,22 +3937,30 @@ export default function App() {
   };
 
   return (
-    <div className="w-full h-[100dvh] max-w-6xl mx-auto overflow-hidden bg-black shadow-2xl relative select-none">
-      {view === 'menu' && renderMenu()}
-      {view === 'combat' && renderCombat()}
-      {view === 'skills' && renderSkills()}
-      {view === 'deck' && renderDeckEditor()}
-      {view === 'codex' && renderCodex()}
-      {view === 'gacha' && renderGacha()}
-      {view === 'gameover' && renderGameOver()}
-      <div className="fixed inset-0 pointer-events-none z-[200]">
+    <div className="w-screen h-[100dvh] bg-black overflow-hidden flex items-center justify-center select-none">
+      <div
+        className="overflow-hidden bg-black shadow-2xl relative"
+        style={{
+          width: 'min(100vw, calc(100dvh * 16 / 9))',
+          height: 'min(100dvh, calc(100vw * 9 / 16))',
+        }}
+      >
+        {view === 'menu' && renderMenu()}
+        {view === 'dungeons' && renderDungeonSelect()}
+        {view === 'combat' && renderCombat()}
+        {view === 'skills' && renderSkills()}
+        {view === 'deck' && renderDeckEditor()}
+        {view === 'codex' && renderCodex()}
+        {view === 'gacha' && renderGacha()}
+        {view === 'gameover' && renderGameOver()}
+        <div className="absolute inset-0 pointer-events-none z-[200] overflow-hidden">
         {activeDeathEffect && deathMonsterIconType ? (
           <div
             key={`enemy-death-${activeDeathEffect.id}`}
-            className="fixed pointer-events-none"
+            className="absolute pointer-events-none"
             style={{
-              left: `${activeDeathEffect.rect.left}px`,
-              top: `${activeDeathEffect.rect.top}px`,
+              left: `${activeDeathEffect.rect.left - gameFrameRect.left}px`,
+              top: `${activeDeathEffect.rect.top - gameFrameRect.top}px`,
               width: `${activeDeathEffect.rect.width}px`,
               height: `${activeDeathEffect.rect.height}px`,
             }}
@@ -3652,12 +4003,12 @@ export default function App() {
             </div>
           </div>
         ) : null}
-        {run.activeEffects.map(fx => (
+        {run.activeEffects.filter((fx) => fx.cardObj && fx.launchOrigin).map(fx => (
           fx.cardObj && fx.launchOrigin ? (
             <div
               key={`global-ghost-${fx.id}`}
-              className="fixed pointer-events-none animate-[card-launch_0.36s_cubic-bezier(0.05,0.7,0.2,1)_forwards]"
-              style={{ left: `${fx.launchOrigin.x}px`, top: `${fx.launchOrigin.y}px` }}
+              className="absolute pointer-events-none animate-[card-launch_0.36s_cubic-bezier(0.05,0.7,0.2,1)_forwards]"
+              style={{ left: `${fx.launchOrigin.x - gameFrameRect.left}px`, top: `${fx.launchOrigin.y - gameFrameRect.top}px` }}
             >
               <div className="relative animate-[card-disintegrate_0.36s_linear_forwards]">
                 <Card
@@ -3683,10 +4034,10 @@ export default function App() {
           <React.Fragment key={`draw-ghost-${fx.id}`}>
             {fx.showHolo ? (
               <div
-                className="fixed pointer-events-none animate-[draw-card-trail_0.54s_cubic-bezier(0.12,0.74,0.2,1)_forwards]"
+                className="absolute pointer-events-none animate-[draw-card-trail_0.54s_cubic-bezier(0.12,0.74,0.2,1)_forwards]"
                 style={{
-                  left: `${fx.origin.x}px`,
-                  top: `${fx.origin.y}px`,
+                  left: `${fx.origin.x - gameFrameRect.left}px`,
+                  top: `${fx.origin.y - gameFrameRect.top}px`,
                   '--draw-dx': `${fx.target.x - fx.origin.x}px`,
                   '--draw-dy': `${fx.target.y - fx.origin.y}px`,
                   animationDelay: `${fx.staggerMs}ms`,
@@ -3696,10 +4047,10 @@ export default function App() {
               </div>
             ) : null}
             <div
-              className="fixed pointer-events-none animate-[draw-card-flight_0.54s_cubic-bezier(0.12,0.74,0.2,1)_forwards]"
+              className="absolute pointer-events-none animate-[draw-card-flight_0.54s_cubic-bezier(0.12,0.74,0.2,1)_forwards]"
               style={{
-                left: `${fx.origin.x}px`,
-                top: `${fx.origin.y}px`,
+                left: `${fx.origin.x - gameFrameRect.left}px`,
+                top: `${fx.origin.y - gameFrameRect.top}px`,
                 width: `${fx.target.width || fx.origin.width || 128}px`,
                 height: `${fx.target.height || fx.origin.height || 192}px`,
                 '--draw-dx': `${fx.target.x - fx.origin.x}px`,
@@ -3731,10 +4082,10 @@ export default function App() {
             </div>
             {fx.showHolo ? (
               <div
-                className="fixed pointer-events-none animate-[draw-card-arrive_0.28s_ease-out_forwards]"
+                className="absolute pointer-events-none animate-[draw-card-arrive_0.28s_ease-out_forwards]"
                 style={{
-                  left: `${fx.target.x - (fx.target.width || 128) / 2}px`,
-                  top: `${fx.target.y - (fx.target.height || 192) / 2}px`,
+                  left: `${fx.target.x - gameFrameRect.left - (fx.target.width || 128) / 2}px`,
+                  top: `${fx.target.y - gameFrameRect.top - (fx.target.height || 192) / 2}px`,
                   width: `${fx.target.width || 128}px`,
                   height: `${fx.target.height || 192}px`,
                   animationDelay: `${fx.staggerMs + 320}ms`,
@@ -3745,6 +4096,7 @@ export default function App() {
             ) : null}
           </React.Fragment>
         ))}
+      </div>
       </div>
     </div>
   );

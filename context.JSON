@@ -3,8 +3,8 @@
   "genre": "Idle-action deckbuilder / real-time card battler / meta-progression collection game",
   "product_direction": {
     "identity": "Stay firmly in the idle-action deckbuilder space rather than becoming a traditional dense TCG simulator.",
-    "run_structure": "Mostly linear for now, with more dungeons and content routes later.",
-    "progression_goal": "Break typical TCG-like rules piece by piece through major upgrades and automation unlocks.",
+    "run_structure": "Mostly linear dungeons for now, with more stages and content routes later.",
+    "progression_goal": "Break typical TCG-like rules piece by piece through stage unlocks, automation, and major upgrades.",
     "content_priority": "Prioritize content breadth and variety first, deeper systems second.",
     "power_curve": "Fast satisfying power climb with a large amount of long-term content."
   },
@@ -15,18 +15,22 @@
     "lucide-react"
   ],
   "architecture": {
-    "root": "Single monolithic App component. ALL gameplay sub-components (Card, CombatStatusPanel, CombatTopMap) and render functions (renderMenu, renderCombat, etc.) MUST remain inside the App function to share state scope and avoid rendering/state bugs.",
-    "asset_paths": "Static assets and CSV files should be resolved via import.meta.env.BASE_URL. Use getAssetPath() when loading from public/ for GitHub Pages compatibility."
+    "root": "Single monolithic App component. Gameplay sub-components and render functions should remain inside App() unless there is a strong reason not to.",
+    "asset_paths": "Static assets and CSV files should be resolved via import.meta.env.BASE_URL. Use getAssetPath() when loading from public/ for GitHub Pages compatibility.",
+    "viewport": "Desktop framing targets a 16:9 game viewport with black letterboxing."
   },
   "state_management": {
     "meta": {
       "desc": "Persistent localStorage save data",
       "keys": [
+        "saveVersion",
+        "stage",
+        "unlockedStages",
+        "unlockedFeatures",
+        "completedDungeons",
         "gp",
         "fragments",
         "packs",
-        "unlockedSkillsFeature",
-        "unlockedShopFeature",
         "maxHand",
         "openingHand",
         "startMana",
@@ -59,7 +63,7 @@
       ]
     },
     "run": {
-      "desc": "Ephemeral combat/map state",
+      "desc": "Ephemeral combat/dungeon state",
       "keys": [
         "hp",
         "maxHp",
@@ -79,12 +83,43 @@
         "enemyAttackEffects",
         "floatingDrops",
         "deathEffect",
+        "power",
         "runMap",
         "nodeIndex",
         "activeEvent",
-        "eventPopup"
+        "eventPopup",
+        "dungeonId",
+        "status",
+        "cardDamage"
       ]
     }
+  },
+  "progression_model": {
+    "stage_system": "Locked future features are hidden until their stage/feature is unlocked.",
+    "dungeon_notation": "Dungeon progression uses floor-room notation X-Y, where every 10 rooms increments the floor.",
+    "live_stage_1": {
+      "stage_name": "Spire Protocol",
+      "dungeon": "Null Corridor",
+      "rooms": 30,
+      "unlock_rooms": {
+        "1-3": "skills",
+        "1-6": "shop",
+        "1-9": "codex",
+        "2-4": "upgrades",
+        "2-8": "banner_support",
+        "3-3": "banner_multihit",
+        "3-7": "pull_5"
+      },
+      "clear_reward": "unlock Stage 2"
+    },
+    "live_stage_2_placeholder": {
+      "dungeon": "Prism Archive",
+      "unlock_room": {
+        "2-7": "pull_10"
+      },
+      "clear_reward": "unlock Stage 3"
+    },
+    "unlock_room_rule": "If a feature is already unlocked, its unlock room is replaced with a normal encounter when the run map is built."
   },
   "databases": {
     "CARD_DB": {
@@ -95,33 +130,25 @@
         "util",
         "heal"
       ],
-      "colors": {
-        "W": "Neutral",
-        "G": "Nature",
-        "B": "Water",
-        "R": "Fire",
-        "D": "Void (reserved thematic identity)",
-        "Y": "Lightning (reserved thematic identity)"
-      },
-      "structure": "{ id, name, type, cost, color, value, desc, icon, optional manaBonus/multiHit/isHeal }"
+      "structure": "{ id, name, type, cost, color, value, desc, icon, optional manaBonus/multiHit/atkBuff/isHeal }"
     },
-    "SKILL_TREE_DICT": {
-      "desc": "Node definitions with costs, dependencies, and mutation functions for meta state",
-      "branches": [
-        "core",
-        "sys",
-        "flow",
-        "dmg",
-        "util",
-        "cross"
+    "banners": {
+      "live_tabs": [
+        "Forge Node",
+        "Core Archive",
+        "Recovery Protocol",
+        "Flurry Engine"
       ],
-      "mechanics": [
-        "Limit Break",
-        "Overcharge",
-        "Overkill Chain",
-        "Passive Flow",
-        "Echo Casting"
-      ]
+      "gating": {
+        "standard": "baseline",
+        "support": "unlock_feature banner_support",
+        "multihit": "unlock_feature banner_multihit",
+        "pull_x5": "unlock_feature pull_5",
+        "pull_x10": "unlock_feature pull_10"
+      }
+    },
+    "skills": {
+      "desc": "Skill tree nodes are stage-gated for visibility and use dependency-based unlocking."
     }
   },
   "core_mechanics": {
@@ -130,20 +157,12 @@
       "features": [
         "Monster timer ticks up and deals damage when reaching maxTimer",
         "Player mana regens based on meta.regenRate",
-        "autoDraw and autoPlayMana logic executes in the combat loop",
-        "activeEffects, enemyAttackEffects, floatingDrops, and drawAnimations are time-filtered for CSS/VFX cleanup"
+        "autoDraw and autoPlayMana logic execute in the combat loop",
+        "activeEffects, enemyAttackEffects, floatingDrops, deathEffect, and draw animations are time-filtered"
       ]
     },
-    "card_play": {
-      "logic": "Deduct cost, apply card effect, resolve damage/heal/shield/draw, award GP/Fragments/Packs on kill, then advance run-map state."
-    },
-    "progression_map": {
-      "generation": "Array of 1000 nodes. Boss every 5th combat milestone. 5% Treasure, 5% Rest. Forced unlocks at index 2 (Skills) and 4 (Shop). Default Encounter otherwise.",
-      "ui": "Sliding horizontal timeline sliced around the current node to avoid DOM lag."
-    },
-    "events": {
-      "interaction": "In-arena holographic event object. Combat pauses while the event is active.",
-      "resolution": "Claim rewards, show popup, apply unlock/reward state, then continue map progression."
+    "power_buff": {
+      "current_rule": "Temporary attack power buffs do not carry to the next enemy."
     }
   },
   "current_implementation_status": {
@@ -151,47 +170,40 @@
       "Real-time 1v1 combat",
       "CSV-driven cards and enemies",
       "Persistent save data",
+      "Stage-gated hidden progression",
+      "Dungeon select flow",
       "Deck editor and codex flow",
       "Pack opening and duplicate upgrades",
       "Skill tree progression",
-      "Map progression with events and bosses",
+      "Map progression through stage-defined room lists",
       "GitHub Pages-compatible asset loading"
     ],
     "recent_vfx_and_ui_progress": [
-      "Varied slash directions with stronger melee impact",
-      "Faster ranged attacks with more forceful muzzle flash",
-      "Hit stop that scales with stronger attacks",
-      "Mana wisps gathering into the MP counter",
-      "Delayed damage and healing behavior on HP bars",
-      "Curved hex-panel shield wall for block cards",
-      "Block overlay integrated into the player HP bar",
-      "Deck-to-hand draw effect with deck pulse, flying ghost card, and landing pulse"
+      "Normal draw uses ghost-card motion without hologram frame effects",
+      "Draw-card effects use ghost-card motion plus hologram overlays",
+      "Enemy death effect iterated into a stronger overload-pop style",
+      "Combat VFX particle count is capped to reduce long-session slowdown",
+      "Global FX overlay is localized to the game frame",
+      "Skill tree opens centered on the central node",
+      "Codex upgrade effect alignment follows the preview card bounds",
+      "Desktop rendering is framed to a 16:9 viewport with black letterboxing"
     ]
   },
   "current_focus": {
-    "main_goal": "Polish combat readability, impact, and card-flow presentation before moving to larger new systems.",
-    "next_likely_task": "Finish stabilizing the draw-card effect so the moving hologram frame matches the ghost card during flight."
+    "main_goal": "Carry stage-based progression from scaffolding into fuller stage content while preserving combat feel and mobile performance.",
+    "next_likely_tasks": [
+      "Define Stage 2 feature placement in dungeon data",
+      "Add the next banner/archetype pack such as mill/discard",
+      "Continue profiling DOM-based overlay effects on long mobile sessions"
+    ]
   },
   "known_issues": [
-    "The moving cyan hologram frame in the draw-card deck-to-hand animation is still visually misaligned during flight.",
-    "The landing pulse for the drawn card appears correct, so the remaining issue is specifically the in-flight frame alignment."
+    "No single blocking presentation bug is currently the main issue.",
+    "Long-session mobile performance may still need more profiling if DOM-based overlay effects accumulate noticeable cost."
   ],
-  "visual_design": {
-    "cards": {
-      "body": "Dark holographic card shell with type-colored outer frame",
-      "foil": "Rare and legendary foil treatments based on cost tiers"
-    },
-    "hud": {
-      "style": "Black/cyan cyber panels with heavy glow accents and clear combat readability"
-    },
-    "effects": {
-      "direction": "High-impact but readable, with strong feedback on attacks, mana gain, healing, block, and draw flow"
-    }
-  },
   "strict_constraints": [
     "Do NOT use external image URLs. Use lucide-react icons only.",
     "Do NOT extract gameplay sub-components outside the main App() function unless absolutely necessary.",
-    "Keep event rendering and pause logic strict so combat fully pauses during active events.",
     "Do NOT create random verification output folders under the project root. Reuse .build-check for build verification.",
     "Do NOT use npx tailwindcss init in this project."
   ]
