@@ -12,7 +12,7 @@ import {
 const ICON_MAP = {
   Sparkles, Leaf, Droplets, Wind, Gem, Flame, Sword, Snowflake, Ghost, Axe,
   Skull, Target, Sun, Crosshair, Eye, Shield, ShieldPlus, Anvil, Hexagon, Zap,
-  RotateCcw, FastForward, Magnet, Search, Cross, Dna, Bug, Bot, Crown,
+  RotateCcw, FastForward, Magnet, Search, Cross, Dna, Bug, Bot, Crown, Activity, Cpu, ChevronsUp,
   Package, Heart, Key, Tent,
 };
 
@@ -73,12 +73,57 @@ let CARD_DB = {
   'u2': { id: 'u2', name: 'Quick Draw', type: 'util', cost: 1, color: 'W', value: 2, desc: 'Draw [VAL]', icon: FastForward },
   'u3': { id: 'u3', name: 'Pot of Greed', type: 'util', cost: 2, color: 'W', value: 3, desc: 'Draw [VAL]', icon: Magnet },
   'u4': { id: 'u4', name: 'Deep Search', type: 'util', cost: 3, color: 'B', value: 4, desc: 'Draw [VAL]', icon: Search },
+  'u5': { id: 'u5', name: 'Battle Rhythm', type: 'util', cost: 1, color: 'R', value: 2, atkBuff: 2, desc: 'Gain +[VAL] Power', icon: Activity },
+  'u6': { id: 'u6', name: 'Chain Protocol', type: 'util', cost: 2, color: 'R', value: 4, atkBuff: 4, desc: 'Gain +[VAL] Power', icon: Cpu },
   'h1': { id: 'h1', name: 'Mending Light', type: 'util', cost: 2, color: 'G', value: 10, isHeal: true, desc: 'Heal [VAL] HP', icon: Cross },
   'h2': { id: 'h2', name: 'Vitality', type: 'util', cost: 4, color: 'G', value: 25, isHeal: true, desc: 'Heal [VAL] HP', icon: Dna },
+  'a12': { id: 'a12', name: 'Spark Barrage', type: 'atk', cost: 2, color: 'Y', value: 3, multiHit: 3, desc: '[VAL] Dmg x3', icon: ChevronsUp },
+  'a13': { id: 'a13', name: 'Razor Storm', type: 'atk', cost: 3, color: 'Y', value: 4, multiHit: 4, desc: '[VAL] Dmg x4', icon: Wind },
+  'a14': { id: 'a14', name: 'Needle Burst', type: 'atk', cost: 1, color: 'Y', value: 2, multiHit: 4, desc: '[VAL] Dmg x4', icon: Crosshair },
 };
 
 const ENEMY_LIST = [{name:'Enforcer',icon:Bug},{name:'Sentry',icon:Ghost},{name:'Drone',icon:Bot},{name:'Watcher',icon:Eye},{name:'Revenant',icon:Skull}];
 const BOSS_LIST = [{name:'Void Reaver',icon:Target},{name:'Doom Guard',icon:Crown},{name:'Soul Eater',icon:Flame},{name:'Cyber Dragon',icon:Zap},{name:'Mana Wraith',icon:Hexagon}];
+
+const PACK_SIZE = 5;
+const BANNER_DEFS = [
+  {
+    id: 'standard',
+    name: 'Core Archive',
+    accent: 'cyan',
+    icon: Package,
+    description: 'Balanced core pool with fewer healing cards and fewer top-end mana spikes.',
+    pool: ['m1', 'm2', 'm3', 'm4', 'a1', 'a2', 'a3', 'a4', 'a5', 'a7', 'a8', 'a9', 'a10', 'd1', 'd2', 'd3', 'd4', 'u1', 'u2', 'u3', 'u4', 'h1'],
+    cardWeights: { h1: 0.45, m4: 0.7, a10: 0.8, d4: 1.1, u2: 1.1 },
+    featuredCards: ['a9', 'd3', 'u4'],
+  },
+  {
+    id: 'support',
+    name: 'Recovery Protocol',
+    accent: 'emerald',
+    icon: Heart,
+    description: 'Healing routines and stronger mana generation, padded with weaker offense and defense.',
+    pool: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'a1', 'a3', 'd1', 'd2', 'u1', 'u2', 'h1', 'h2'],
+    cardWeights: { m4: 1.35, m5: 1.45, m6: 0.8, h1: 1.5, h2: 1.15, a1: 0.65, a3: 0.7, d1: 0.8, d2: 0.8 },
+    featuredCards: ['m6', 'h2', 'm5'],
+  },
+  {
+    id: 'multihit',
+    name: 'Flurry Engine',
+    accent: 'amber',
+    icon: ChevronsUp,
+    description: 'Multi-hit attacks plus power buffs that scale each hit into a larger burst.',
+    pool: ['m1', 'm2', 'm3', 'a1', 'a8', 'a10', 'a12', 'a13', 'a14', 'd1', 'd4', 'u1', 'u2', 'u5', 'u6'],
+    cardWeights: { a10: 1.3, a12: 1.45, a13: 1.1, a14: 1.55, u5: 1.5, u6: 1.15, a1: 0.55, d1: 0.6 },
+    featuredCards: ['a13', 'u6', 'a14'],
+  },
+];
+const BANNER_MAP = Object.fromEntries(BANNER_DEFS.map((banner) => [banner.id, banner]));
+const RARITY_PULL_WEIGHTS = { common: 74, rare: 21, epic: 4.25, legendary: 0.75 };
+const GACHA_TABS = [
+  { id: 'synthesis', name: 'Forge Node', accent: 'violet', icon: Layers, kind: 'synthesis' },
+  ...BANNER_DEFS.map((banner) => ({ ...banner, kind: 'banner' })),
+];
 
 const loadGameData = async () => {
   try {
@@ -106,6 +151,7 @@ const loadGameData = async () => {
       };
       if (row.manaBonus) card.manaBonus = parseInt(row.manaBonus);
       if (row.multiHit) card.multiHit = parseInt(row.multiHit);
+      if (row.atkBuff) card.atkBuff = parseInt(row.atkBuff);
       if (row.isHeal === 'true') card.isHeal = true;
       db[card.id] = card;
     });
@@ -735,6 +781,10 @@ const CombatVfxCanvas = ({ activeEffects, enemyAttackEffects, hitStopUntil, enem
     }, [resizeCanvas]);
 
     useEffect(() => {
+        const liveActiveIds = new Set(activeEffects.map((fx) => fx.id));
+        seenActiveRef.current.forEach((id) => {
+            if (!liveActiveIds.has(id)) seenActiveRef.current.delete(id);
+        });
         activeEffects.forEach((fx) => {
             if (seenActiveRef.current.has(fx.id)) return;
             seenActiveRef.current.add(fx.id);
@@ -743,6 +793,10 @@ const CombatVfxCanvas = ({ activeEffects, enemyAttackEffects, hitStopUntil, enem
     }, [activeEffects, spawnActiveEffect]);
 
     useEffect(() => {
+        const liveEnemyIds = new Set(enemyAttackEffects.map((fx) => fx.id));
+        seenEnemyRef.current.forEach((id) => {
+            if (!liveEnemyIds.has(id)) seenEnemyRef.current.delete(id);
+        });
         enemyAttackEffects.forEach((fx) => {
             if (seenEnemyRef.current.has(fx.id)) return;
             seenEnemyRef.current.add(fx.id);
@@ -771,7 +825,11 @@ const CombatVfxCanvas = ({ activeEffects, enemyAttackEffects, hitStopUntil, enem
             ctx.rect(clipPadding, clipPadding, Math.max(0, rect.width - clipPadding * 2), Math.max(0, rect.height - clipPadding * 2));
             ctx.clip();
 
-            particlesRef.current = particlesRef.current.filter((p) => now < p.born + p.ttl + 20);
+            const liveParticles = [];
+            for (const particle of particlesRef.current) {
+                if (now < particle.born + particle.ttl + 20) liveParticles.push(particle);
+            }
+            particlesRef.current = liveParticles;
 
             for (const p of particlesRef.current) {
                 const age = Math.max(0, now - p.born);
@@ -1143,6 +1201,11 @@ export default function App() {
   }, [meta]);
 
   const [pulledCards, setPulledCards] = useState([]);
+  const [activeGachaTabId, setActiveGachaTabId] = useState('synthesis');
+  const [lastOpenedBannerId, setLastOpenedBannerId] = useState('standard');
+  const [previewBannerId, setPreviewBannerId] = useState(null);
+  const [selectedFeaturedCardId, setSelectedFeaturedCardId] = useState(null);
+  const [hoveredFeaturedCardId, setHoveredFeaturedCardId] = useState(null);
   const [hoveredCardId, setHoveredCardId] = useState(null);
   const [lockedCardId, setLockedCardId] = useState(null); 
   const [isDiscardMode, setIsDiscardMode] = useState(false);
@@ -1214,7 +1277,7 @@ export default function App() {
   const [run, setRun] = useState({
     hp: 50, maxHp: 50, shield: 0, mana: 0, kills: 0, gpEarned: 0, fragsEarned: 0, packsEarned: 0,
     deck: [], hand: [], discard: [], monster: null, isPaused: false, autoDrawTimer: 0, activeEffects: [], enemyAttackEffects: [],
-    floatingDrops: [], deathEffect: null, runMap: [], nodeIndex: 0, activeEvent: null, eventPopup: null,
+    floatingDrops: [], deathEffect: null, power: 0, runMap: [], nodeIndex: 0, activeEvent: null, eventPopup: null,
     cardDamage: {}
   });
   const enemyCardRef = useRef(null);
@@ -1336,6 +1399,82 @@ export default function App() {
     };
   }, []);
 
+  const getRarityTier = useCallback((card) => {
+    if (!card) return 'common';
+    if (card.cost >= 6) return 'legendary';
+    if (card.cost >= 4) return 'epic';
+    if (card.cost >= 2) return 'rare';
+    return 'common';
+  }, []);
+
+  const pickWeightedCardId = useCallback((banner) => {
+    if (!banner?.pool?.length) return null;
+    let totalWeight = 0;
+    const weightedPool = [];
+
+    for (const cardId of banner.pool) {
+      const card = CARD_DB[cardId];
+      if (!card) continue;
+      const rarityWeight = RARITY_PULL_WEIGHTS[getRarityTier(card)] || 1;
+      const featureWeight = banner.cardWeights?.[cardId] || 1;
+      const totalCardWeight = rarityWeight * featureWeight;
+      weightedPool.push({ cardId, weight: totalCardWeight });
+      totalWeight += totalCardWeight;
+    }
+
+    if (weightedPool.length === 0) return null;
+    let roll = Math.random() * totalWeight;
+    for (const entry of weightedPool) {
+      roll -= entry.weight;
+      if (roll <= 0) return entry.cardId;
+    }
+    return weightedPool[weightedPool.length - 1].cardId;
+  }, [getRarityTier]);
+
+  const getMonsterIcon = useCallback((monster) => {
+    if (!monster) return monster?.isBoss ? Trophy : Sword;
+    if (monster.iconId !== undefined) {
+      const iconEntry = monster.isBoss ? BOSS_LIST[monster.iconId] : ENEMY_LIST[monster.iconId];
+      return iconEntry?.icon || (monster.isBoss ? Trophy : Sword);
+    }
+    return monster.isBoss ? Trophy : Sword;
+  }, []);
+
+  const buildEnemyDeathEffect = useCallback((monster) => {
+    if (!monster) return null;
+    const rect = enemyCardRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+
+    const shardCount = monster.isBoss ? 64 : 46;
+    return {
+      id: Math.random(),
+      timestamp: Date.now(),
+      monster: { ...monster },
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      },
+      shards: Array.from({ length: shardCount }, (_, index) => ({
+        id: `${Date.now()}-${index}`,
+        left: 10 + Math.random() * Math.max(24, rect.width - 32),
+        top: 14 + Math.random() * Math.max(30, rect.height - 40),
+        size: 12 + Math.random() * 22,
+        driftX: (() => {
+          const dir = Math.random() < 0.5 ? -1 : 1;
+          const base = monster.isBoss ? 180 : 135;
+          return dir * (base + Math.random() * (monster.isBoss ? 130 : 95));
+        })(),
+        driftY: 80 + Math.random() * (monster.isBoss ? 180 : 135),
+        rotate: (Math.random() - 0.5) * 260,
+        delay: Math.random() * 45,
+        duration: 540 + Math.random() * 340,
+        opacity: 0.72 + Math.random() * 0.26,
+      })),
+    };
+  }, []);
+
   const getEffectiveCost = useCallback((card) => {
     if (meta.freeLowCost && card.cost === 1) return 0;
     if (meta.freeUtil && card.type === 'util' && !card.isHeal) return 0;
@@ -1361,17 +1500,18 @@ export default function App() {
       return { state, drawnCards };
   }, [meta.maxHand]);
 
-  const queueDrawEffects = useCallback((drawnCards) => {
-      if (!drawnCards || drawnCards.length === 0) return;
+  const queueDrawEffects = useCallback((queuedDraws) => {
+      if (!queuedDraws || queuedDraws.length === 0) return;
       const deckRect = deckButtonRef.current?.getBoundingClientRect();
       if (!deckRect) return;
 
       setPendingDrawEffects((prev) => [
           ...prev,
-          ...drawnCards.map((card, index) => ({
+          ...queuedDraws.map(({ card, showHolo }, index) => ({
               id: Math.random(),
               runId: card.runId,
               cardObj: card,
+              showHolo: !!showHolo,
               queuedAt: Date.now(),
               origin: {
                   x: deckRect.left + deckRect.width / 2,
@@ -1438,7 +1578,7 @@ export default function App() {
 
     setRun({
       hp: 50, maxHp: 50, shield: 0, mana: meta.startMana, kills: 0, gpEarned: 0, fragsEarned: 0, packsEarned: 0,
-      deck, hand, discard: [], monster: initialMonster, isPaused: false, autoDrawTimer: 0, activeEffects: [], enemyAttackEffects: [], floatingDrops: [], deathEffect: null,
+      deck, hand, discard: [], monster: initialMonster, isPaused: false, autoDrawTimer: 0, activeEffects: [], enemyAttackEffects: [], floatingDrops: [], deathEffect: null, power: 0,
       runMap: freshMap, nodeIndex: 0, activeEvent: initialEvent, eventPopup: null,
       cardDamage: {}
     });
@@ -1536,16 +1676,19 @@ export default function App() {
       return;
     }
     if (card.type === 'atk') {
-      let projectedDamage = card.currentValue + meta.dmgMod;
-      if (meta.heavyDmgMod > 0 && card.cost >= 3) projectedDamage += meta.heavyDmgMod;
+      const totalHits = card.multiHit ? card.multiHit + (meta.multiStrike ? 1 : 0) : 1;
+      let perHitDamage = card.currentValue + meta.dmgMod + (run.power || 0);
+      if (meta.heavyDmgMod > 0 && card.cost >= 3) perHitDamage += meta.heavyDmgMod;
+      let projectedDamage = perHitDamage * totalHits;
       if (meta.firstStrike && run.monster && run.monster.hp === run.monster.maxHp) projectedDamage *= 2;
       if (meta.bossSlayer && run.monster && run.monster.isBoss) projectedDamage = Math.floor(projectedDamage * 1.5);
-      if (card.multiHit) projectedDamage *= (card.multiHit + (meta.multiStrike ? 1 : 0));
       setHitStopUntil(Date.now() + getAttackFxProfile(card, projectedDamage).hitStop);
     }
     setRun(prev => {
       const timestamp = Date.now();
-      const attackProfile = card.type === 'atk' ? getAttackFxProfile(card, card.currentValue + meta.dmgMod) : null;
+      const totalHits = card.multiHit ? card.multiHit + (meta.multiStrike ? 1 : 0) : 1;
+      const projectedBaseDamage = (card.currentValue + meta.dmgMod + (prev.power || 0)) * totalHits;
+      const attackProfile = card.type === 'atk' ? getAttackFxProfile(card, projectedBaseDamage) : null;
 
       let nextRun = {
         ...prev, mana: prev.mana - cost, hand: prev.hand.filter(c => c.runId !== card.runId), discard: [...prev.discard, card],
@@ -1555,11 +1698,10 @@ export default function App() {
       if (meta.manaRefund && cost > 0) nextRun.mana += 1;
 
       if (card.type === 'atk') {
-        let dmg = card.currentValue + meta.dmgMod;
-        if (meta.heavyDmgMod > 0 && card.cost >= 3) dmg += meta.heavyDmgMod;
+        let dmg = (card.currentValue + meta.dmgMod + (nextRun.power || 0)) * totalHits;
+        if (meta.heavyDmgMod > 0 && card.cost >= 3) dmg += meta.heavyDmgMod * totalHits;
         if (meta.firstStrike && nextRun.monster && nextRun.monster.hp === nextRun.monster.maxHp) dmg *= 2;
         if (meta.bossSlayer && nextRun.monster && nextRun.monster.isBoss) dmg = Math.floor(dmg * 1.5);
-        if (card.multiHit) dmg *= (card.multiHit + (meta.multiStrike ? 1 : 0));
         if (nextRun.monster) {
             nextRun.monster.hp -= dmg;
             nextRun.cardDamage = { ...nextRun.cardDamage };
@@ -1570,7 +1712,10 @@ export default function App() {
         if (meta.drawOnAtk) {
             const drawResult = drawCardsWithMeta(nextRun, 1);
             nextRun = drawResult.state;
-            queuedDrawCardsRef.current = [...queuedDrawCardsRef.current, ...drawResult.drawnCards];
+            queuedDrawCardsRef.current = [
+                ...queuedDrawCardsRef.current,
+                ...drawResult.drawnCards.map((drawnCard) => ({ card: drawnCard, showHolo: true })),
+            ];
         }
         if (meta.heavyArmor && card.cost >= 3) nextRun.shield += 5;
       } else if (card.type === 'mana') {
@@ -1600,10 +1745,15 @@ export default function App() {
         if (card.isHeal) {
             const healAmt = meta.healBoost ? Math.floor(card.currentValue * 1.5) : card.currentValue;
             nextRun.hp = Math.min(nextRun.maxHp, nextRun.hp + healAmt);
+        } else if (card.atkBuff) {
+            nextRun.power = (nextRun.power || 0) + card.currentValue;
         } else {
             const drawResult = drawCardsWithMeta(nextRun, card.currentValue);
             nextRun = drawResult.state;
-            queuedDrawCardsRef.current = [...queuedDrawCardsRef.current, ...drawResult.drawnCards];
+            queuedDrawCardsRef.current = [
+                ...queuedDrawCardsRef.current,
+                ...drawResult.drawnCards.map((drawnCard) => ({ card: drawnCard, showHolo: true })),
+            ];
         }
       }
 
@@ -1641,7 +1791,8 @@ export default function App() {
         nextRun.floatingDrops = [...(nextRun.floatingDrops||[]), ...newDrops.map(d => ({
             ...d, timestamp: Date.now() + d.delay, offsetX: d.isLabel ? 0 : (Math.random() - 0.5) * 350 
         }))];
-        nextRun.deathEffect = Date.now();
+        nextRun.deathEffect = buildEnemyDeathEffect(nextRun.monster);
+        setHitStopUntil(Date.now() + (nextRun.monster.isBoss ? 160 : 110));
         
         nextRun.kills += 1;
         nextRun.nodeIndex += 1;
@@ -1649,6 +1800,7 @@ export default function App() {
         
         nextRun.mana = Math.floor(nextRun.mana * meta.manaRetain) + meta.startMana;
         nextRun.shield = 0;
+        nextRun.power = 0;
         
         if (nextNode.type === 'encounter' || nextNode.type === 'boss') {
             nextRun.monster = generateMonster(nextRun.kills, nextNode.type === 'boss');
@@ -1673,7 +1825,10 @@ export default function App() {
     setIsDiscardMode(false);
     setRun(prev => {
         const drawResult = drawCardsWithMeta(prev, meta.drawMulti);
-        queuedDrawCardsRef.current = [...queuedDrawCardsRef.current, ...drawResult.drawnCards];
+        queuedDrawCardsRef.current = [
+            ...queuedDrawCardsRef.current,
+            ...drawResult.drawnCards.map((drawnCard) => ({ card: drawnCard, showHolo: false })),
+        ];
         return drawResult.state;
     });
   };
@@ -1707,6 +1862,7 @@ export default function App() {
         if (next.activeEffects.length > 0) next.activeEffects = next.activeEffects.filter(e => now - e.timestamp < 600);
         if (next.enemyAttackEffects && next.enemyAttackEffects.length > 0) next.enemyAttackEffects = next.enemyAttackEffects.filter(e => now - e.timestamp < 500);
         if (next.floatingDrops && next.floatingDrops.length > 0) next.floatingDrops = next.floatingDrops.filter(e => now - e.timestamp < 1500);
+        if (next.deathEffect && now - next.deathEffect.timestamp >= 720) next.deathEffect = null;
 
         if (next.monster) {
             next.monster = { ...prev.monster };
@@ -1731,7 +1887,10 @@ export default function App() {
                 next.autoDrawTimer = 0;
                 const drawResult = drawCardsWithMeta(next, 1);
                 next = drawResult.state;
-                queuedDrawCardsRef.current = [...queuedDrawCardsRef.current, ...drawResult.drawnCards];
+                queuedDrawCardsRef.current = [
+                    ...queuedDrawCardsRef.current,
+                    ...drawResult.drawnCards.map((drawnCard) => ({ card: drawnCard, showHolo: false })),
+                ];
             }
         }
 
@@ -1785,32 +1944,28 @@ export default function App() {
       }
   };
 
-  const openPack = (count = 1) => {
+  const openPack = useCallback((bannerId, count = 1) => {
+      const banner = BANNER_MAP[bannerId] || BANNER_MAP.standard;
       const actualCount = Math.min(count, meta.packs);
       if (actualCount > 0) {
-          const cardKeys = Object.keys(CARD_DB);
           const newCards = [];
           
           for (let p = 0; p < actualCount; p++) {
-              for(let i = 0; i < 5; i++) {
-                  const roll = Math.random();
-                  let pool = cardKeys.filter(k => CARD_DB[k].cost < 3); 
-                  if (roll > 0.7) pool = cardKeys.filter(k => CARD_DB[k].cost >= 2 && CARD_DB[k].cost <= 4); 
-                  if (roll > 0.95) pool = cardKeys.filter(k => CARD_DB[k].cost >= 4); 
-                  if (pool.length === 0) pool = cardKeys;
-                  const pulledId = pool[Math.floor(Math.random() * pool.length)];
-                  newCards.push(CARD_DB[pulledId]);
+              for(let i = 0; i < PACK_SIZE; i++) {
+                  const pulledId = pickWeightedCardId(banner);
+                  if (pulledId && CARD_DB[pulledId]) newCards.push(CARD_DB[pulledId]);
               }
           }
 
           setPulledCards(newCards);
+          setLastOpenedBannerId(banner.id);
           setMeta(prev => {
               const newCollection = { ...prev.collection };
               newCards.forEach(c => { newCollection[c.id] = (newCollection[c.id] || 0) + 1; });
               return { ...prev, packs: prev.packs - actualCount, collection: newCollection };
           });
       }
-  };
+  }, [pickWeightedCardId, meta.packs]);
 
   const upgradeCard = (id) => {
       const lvl = getCardLevel(id);
@@ -1894,9 +2049,9 @@ export default function App() {
         100% { transform: translate(-50%, -50%) translate(calc(var(--draw-dx) * 0.82), calc(var(--draw-dy) * 0.82 - 20px)) scaleY(1); opacity: 0; }
       }
       @keyframes draw-card-arrive {
-        0% { transform: translate(-50%, -50%) scale(0.82); opacity: 0; }
+        0% { transform: scale(0.82); opacity: 0; }
         35% { opacity: 0.9; }
-        100% { transform: translate(-50%, -50%) scale(1.14); opacity: 0; }
+        100% { transform: scale(1.08); opacity: 0; }
       }
       @keyframes attack-flash { 0% { opacity: 0; transform: scale(0.74); } 18% { opacity: 0.9; transform: scale(0.98); } 100% { opacity: 0; transform: scale(1.12); } }
       @keyframes projectile-shot { 0% { transform: translate(-50%, 20px) rotate(var(--shot-angle)) scaleX(0.45); opacity: 0; } 18% { opacity: 1; } 100% { transform: translate(-50%, -78px) rotate(var(--shot-angle)) scaleX(1); opacity: 0; } }
@@ -1911,7 +2066,39 @@ export default function App() {
       @keyframes slideUp { from { opacity: 0; transform: translateY(50px) scale(var(--tw-scale-x, 1)); } to { opacity: 1; transform: translateY(0) scale(var(--tw-scale-x, 1)); } }
       @keyframes popIn { 0% { transform: scale(0.5); opacity: 0; } 70% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
       @keyframes unlockFlare { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(2.5); opacity: 0; } }
-      @keyframes enemy-death { 0% { filter: brightness(1) blur(0px); transform: scale(1); } 50% { filter: brightness(2) blur(5px); transform: scale(1.2); opacity: 1; } 100% { filter: brightness(0) blur(10px); transform: scale(1.5); opacity: 0; } }
+      @keyframes enemy-death {
+        0% { opacity: 1; transform: scale(1); filter: brightness(1) saturate(1); }
+        16% { opacity: 1; transform: scale(1.1); filter: brightness(2.8) saturate(1.8); }
+        34% { opacity: 1; transform: scale(0.86); filter: brightness(4) saturate(2.1) blur(1px); }
+        100% { opacity: 0; transform: scale(0.15); filter: brightness(0.2) saturate(0.4) blur(10px); }
+      }
+      @keyframes enemy-data-scan {
+        0% { opacity: 0; transform: translateY(28px) scaleY(0.5); }
+        20% { opacity: 1; }
+        100% { opacity: 0; transform: translateY(-42px) scaleY(1.35); }
+      }
+      @keyframes enemy-death-flash {
+        0% { opacity: 0; transform: scale(0.6); }
+        20% { opacity: 1; }
+        100% { opacity: 0; transform: scale(1.7); }
+      }
+      @keyframes enemy-overload-core {
+        0% { opacity: 0; transform: translate(-50%, -50%) scale(0.25); }
+        18% { opacity: 1; }
+        45% { opacity: 1; transform: translate(-50%, -50%) scale(0.92); }
+        100% { opacity: 0; transform: translate(-50%, -50%) scale(1.9); }
+      }
+      @keyframes enemy-overload-ring {
+        0% { opacity: 0; transform: translate(-50%, -50%) scale(0.45); }
+        24% { opacity: 0.95; }
+        100% { opacity: 0; transform: translate(-50%, -50%) scale(1.75); }
+      }
+      @keyframes enemy-data-shard {
+        0% { transform: translate(0px, 0px) rotate(0deg) scale(0.25); opacity: 0; }
+        10% { opacity: var(--shard-opacity, 0.85); }
+        68% { opacity: calc(var(--shard-opacity, 0.85) * 0.78); }
+        100% { transform: translate(var(--shard-x, 0px), var(--shard-y, 0px)) rotate(var(--shard-rot, 0deg)) scale(0.18); opacity: 0; }
+      }
       @keyframes rare-reveal { 
           0% { opacity: 0; box-shadow: 0 0 0px rgba(234,179,8,0); transform: scale(0.8); filter: brightness(1.7); } 
           30% { opacity: 1; box-shadow: 0 0 40px rgba(234,179,8,0.8), 0 0 80px rgba(234,179,8,0.4); transform: scale(1.08); }
@@ -1982,6 +2169,12 @@ export default function App() {
   }, [meta.collection, meta.activeDeck, meta.cardLevels]);
 
   const hasPacks = meta.packs > 0 || meta.fragments >= 10;
+  const activeDeathEffect = run.deathEffect && frameNow - run.deathEffect.timestamp < 720 ? run.deathEffect : null;
+  const deathMonsterIconType = activeDeathEffect ? getMonsterIcon(activeDeathEffect.monster) : null;
+  const activeGachaTab = GACHA_TABS.find((tab) => tab.id === activeGachaTabId) || GACHA_TABS[0];
+  const activeBanner = activeGachaTab.kind === 'banner' ? (BANNER_MAP[activeGachaTab.id] || BANNER_MAP.standard) : null;
+  const lastOpenedBanner = BANNER_MAP[lastOpenedBannerId] || BANNER_MAP.standard;
+  const previewBanner = previewBannerId ? (BANNER_MAP[previewBannerId] || null) : null;
 
   // --- Views ---
 
@@ -2054,15 +2247,24 @@ export default function App() {
     const isCombatNode = currentMapNode && (currentMapNode.type === 'encounter' || currentMapNode.type === 'boss');
     const renderTimestamp = frameNow;
     const isHitStopActive = renderTimestamp < hitStopUntil;
-    const manaFx = run.activeEffects.filter(e => e.type === 'mana');
-    const hasManaFx = manaFx.length > 0;
+    const manaFx = [];
     const hasDrawFx = pendingDrawEffects.length > 0 || drawAnimations.length > 0;
 
     let monsterTimerPercent = 0;
     let timeLeft = "0.0";
     let showTimer = false, showDanger = false, showCritical = false;
-    let isMonsterAttacking = false, isMonsterDying = false;
+    let isMonsterAttacking = false;
     let MonsterIcon = Trophy;
+    let playerHealPulseSignal = 0;
+    let shakeLevel = 0;
+
+    for (const effect of run.activeEffects || []) {
+        if (effect.type === 'mana') manaFx.push(effect);
+        if (effect.type === 'heal') playerHealPulseSignal = Math.max(playerHealPulseSignal, effect.timestamp || 0);
+        if (isCombatNode && effect.type === 'atk') shakeLevel = Math.max(shakeLevel, effect.cost >= 3 ? 2 : 1);
+    }
+
+    const hasManaFx = manaFx.length > 0;
 
     if (isCombatNode && run.monster) {
         monsterTimerPercent = (run.monster.timer / run.monster.maxTimer) * 100;
@@ -2071,17 +2273,8 @@ export default function App() {
         showDanger = monsterTimerPercent > 80;
         showCritical = monsterTimerPercent > 90;
         isMonsterAttacking = run.enemyAttackEffects && run.enemyAttackEffects.some(e => renderTimestamp - e.timestamp < 200);
-        isMonsterDying = run.deathEffect && renderTimestamp - run.deathEffect < 500;
-        MonsterIcon = run.monster.iconId !== undefined 
-            ? (run.monster.isBoss ? BOSS_LIST.map(e=>e.icon)[run.monster.iconId] : ENEMY_LIST.map(e=>e.icon)[run.monster.iconId]) 
-            : (run.monster.isBoss ? Trophy : Sword);
+        MonsterIcon = getMonsterIcon(run.monster);
     }
-
-    const playerHealPulseSignal = [...(run.activeEffects || [])]
-        .filter((effect) => effect.type === 'heal')
-        .reduce((latest, effect) => Math.max(latest, effect.timestamp || 0), 0);
-
-    const shakeLevel = isCombatNode ? run.activeEffects.reduce((max, e) => e.type === 'atk' ? Math.max(max, e.cost >= 3 ? 2 : 1) : max, 0) : 0;
     const shakeClass = shakeLevel === 2 ? 'animate-[window-shake-heavy_0.3s_ease-in-out_infinite]' : shakeLevel === 1 ? 'animate-[window-shake-small_0.15s_ease-in-out_infinite]' : '';
 
     return (
@@ -2203,12 +2396,7 @@ export default function App() {
            {/* Render Card Effects Overlay */}
            {(!run.activeEvent || isCombatNode) && (
            <div className="absolute inset-0 pointer-events-none z-50 overflow-hidden flex items-center justify-center mt-12">
-               {run.activeEffects.map(fx => {
-                   if (fx.type === 'atk' || fx.type === 'def' || fx.type === 'util' || fx.type === 'heal') return null;
-                   return null;
-               })}
-
-               {/* Floating Loot Drops */}
+              {/* Floating Loot Drops */}
                {run.floatingDrops && run.floatingDrops.map(drop => {
                     let color = 'text-yellow-400';
                     const iconSz = drop.isLabel ? 16 : 24;
@@ -2261,7 +2449,7 @@ export default function App() {
                    <div className={`relative group transition-transform duration-100 z-10 ${isMonsterAttacking ? 'translate-y-8 scale-110' : ''}`}>
                       <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-48 h-12 bg-cyan-900/40 rounded-[100%] border border-cyan-500/30 shadow-[0_0_30px_rgba(0,255,255,0.2)]" />
                       
-                      <div ref={enemyCardRef} className={`w-44 h-60 rounded-sm bg-gradient-to-br ${run.monster.isBoss ? 'from-red-950 to-black border-red-500 shadow-[0_0_50px_rgba(255,0,0,0.4)]' : 'from-slate-800 to-slate-900 border-cyan-400/50 shadow-[0_0_30px_rgba(0,255,255,0.2)]'} border-2 flex flex-col items-center justify-center relative overflow-hidden transform group-hover:scale-105 group-hover:-translate-y-2 transition-transform duration-500 ${isMonsterDying ? 'animate-[enemy-death_0.5s_ease-out_forwards]' : ''} ${isHitStopActive ? 'scale-110 brightness-125' : ''}`}>
+                      <div ref={enemyCardRef} className={`w-44 h-60 rounded-sm bg-gradient-to-br ${run.monster.isBoss ? 'from-red-950 to-black border-red-500 shadow-[0_0_50px_rgba(255,0,0,0.4)]' : 'from-slate-800 to-slate-900 border-cyan-400/50 shadow-[0_0_30px_rgba(0,255,255,0.2)]'} border-2 flex flex-col items-center justify-center relative overflow-hidden transform group-hover:scale-105 group-hover:-translate-y-2 transition-transform duration-500 ${isHitStopActive ? 'scale-110 brightness-125' : ''}`}>
                           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:100%_4px] pointer-events-none" />
                           <MonsterIcon size={80} className={`${run.monster.isBoss ? 'text-red-400' : 'text-cyan-400'} drop-shadow-[0_0_15px_currentColor]`} />
                       </div>
@@ -2294,12 +2482,20 @@ export default function App() {
                   shield={run.shield}
                   extraContent={
                       <div className="flex justify-between items-center mt-2">
-                          {run.shield > 0 ? (
-                              <div className="flex items-center gap-1 sm:gap-2 bg-blue-900/40 px-3 py-0.5 rounded border border-blue-400 animate-pulse">
-                                  <Shield className="text-blue-400" size={14} />
-                                  <span className="font-mono text-sm font-black text-blue-100">{run.shield} Block</span>
-                              </div>
-                          ) : <div />}
+                          <div className="flex items-center gap-2">
+                              {run.shield > 0 ? (
+                                  <div className="flex items-center gap-1 sm:gap-2 bg-blue-900/40 px-3 py-0.5 rounded border border-blue-400 animate-pulse">
+                                      <Shield className="text-blue-400" size={14} />
+                                      <span className="font-mono text-sm font-black text-blue-100">{run.shield} Block</span>
+                                  </div>
+                              ) : null}
+                              {run.power > 0 ? (
+                                  <div className="flex items-center gap-1 sm:gap-2 bg-amber-900/40 px-3 py-0.5 rounded border border-amber-400 shadow-[0_0_16px_rgba(251,191,36,0.25)]">
+                                      <Sword className="text-amber-300" size={14} />
+                                      <span className="font-mono text-sm font-black text-amber-100">+{run.power} Power</span>
+                                  </div>
+                              ) : null}
+                          </div>
                           <div className="flex items-center gap-2 relative">
                               <div className={`flex items-center gap-2 ${hasManaFx ? 'animate-[mana-counter-pop_0.35s_ease-out]' : ''}`}>
                                   <div className="relative flex items-center justify-center">
@@ -2937,10 +3133,10 @@ export default function App() {
 
   const renderGacha = () => {
       if (pulledCards.length > 0) {
-          const packCount = Math.ceil(pulledCards.length / 5);
+          const packCount = Math.ceil(pulledCards.length / PACK_SIZE);
           const packs = [];
           for (let p = 0; p < packCount; p++) {
-              packs.push(pulledCards.slice(p * 5, p * 5 + 5));
+              packs.push(pulledCards.slice(p * PACK_SIZE, p * PACK_SIZE + PACK_SIZE));
           }
 
           return (
@@ -2952,9 +3148,14 @@ export default function App() {
                       <div className="absolute inset-0 bg-gradient-to-b from-purple-500/30 via-yellow-500/20 to-transparent animate-[legendary-flash_1.5s_ease-out_forwards] pointer-events-none z-20" />
                   )}
 
-                  <h2 className="text-3xl sm:text-5xl font-black text-cyan-400 uppercase tracking-widest mb-6 sm:mb-10 mt-8 sm:mt-12 drop-shadow-[0_0_15px_rgba(0,255,255,0.8)] animate-pulse text-center z-10">
-                      {packCount > 1 ? `${packCount}x Packs Acquired` : 'Pack Acquired'}
-                  </h2>
+                  <div className="z-10 text-center mb-6 sm:mb-10 mt-8 sm:mt-12">
+                      <h2 className="text-3xl sm:text-5xl font-black text-cyan-400 uppercase tracking-widest drop-shadow-[0_0_15px_rgba(0,255,255,0.8)] animate-pulse">
+                          {packCount > 1 ? `${packCount}x Packs Extracted` : 'Pack Extracted'}
+                      </h2>
+                      <p className="mt-3 text-xs sm:text-sm uppercase tracking-[0.35em] text-slate-500">
+                          {lastOpenedBanner.name}
+                      </p>
+                  </div>
                   
                   <div className="flex flex-col gap-6 sm:gap-8 z-10 w-full items-center mb-12">
                       {packs.map((pack, packIdx) => (
@@ -3015,6 +3216,42 @@ export default function App() {
 
       return (
           <div className="flex flex-col h-full bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-slate-900 via-black to-black text-white p-4 sm:p-8 relative font-tech overflow-y-auto">
+              {previewBanner && (
+                  <div className="fixed inset-0 z-[220] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                      <div className="relative w-full max-w-5xl max-h-[85vh] overflow-hidden rounded-sm border border-cyan-700/60 bg-slate-950 shadow-[0_0_45px_rgba(0,255,255,0.18)]">
+                          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 bg-black/60">
+                              <div>
+                                  <h3 className="text-xl sm:text-2xl font-black uppercase tracking-widest text-cyan-300">{previewBanner.name} Pool</h3>
+                                  <p className="text-xs sm:text-sm text-slate-400 mt-1">{previewBanner.description}</p>
+                              </div>
+                              <button
+                                  onClick={() => setPreviewBannerId(null)}
+                                  className="px-4 py-2 text-xs sm:text-sm font-black uppercase tracking-widest border border-slate-700 text-slate-300 hover:border-cyan-400 hover:text-cyan-300 transition-colors"
+                              >
+                                  Close
+                              </button>
+                          </div>
+                          <div className="p-4 sm:p-5 overflow-y-auto max-h-[calc(85vh-5rem)]">
+                              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
+                                  {previewBanner.pool.map((cardId) => {
+                                      const card = CARD_DB[cardId];
+                                      if (!card) return null;
+                                      const owned = meta.collection[cardId] || 0;
+                                      return (
+                                          <div key={`${previewBanner.id}-${cardId}`} className="flex flex-col items-center bg-black/30 border border-slate-800 p-3 rounded-sm">
+                                              <Card cardId={cardId} scale={0.72} level={getCardLevel(cardId)} overrideValue={getCardValue(card, getCardLevel(cardId))} />
+                                              <div className="mt-3 text-center">
+                                                  <div className="text-xs uppercase tracking-[0.25em] text-slate-500">Owned</div>
+                                                  <div className="text-lg font-black text-cyan-300">{owned}</div>
+                                              </div>
+                                          </div>
+                                      );
+                                  })}
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              )}
               <div className="flex flex-col sm:flex-row justify-between items-center mb-8 sm:mb-12 relative z-20 gap-4">
                   <button onClick={() => setView('menu')} className="w-full sm:w-auto flex items-center justify-center gap-2 text-amber-400 hover:text-white uppercase font-black text-xs sm:text-sm tracking-widest bg-black/50 px-4 py-3 rounded border border-amber-900">
                       <ArrowLeft size={16} /> Return to Hub
@@ -3031,39 +3268,238 @@ export default function App() {
                   </div>
               </div>
 
-              <div className="flex-grow flex flex-col md:flex-row items-center justify-center gap-8 md:gap-12 z-10 pb-12">
-                  <div className="w-full max-w-[20rem] bg-slate-900/60 border border-purple-800/50 rounded-sm p-6 flex flex-col items-center text-center backdrop-blur-md shadow-[0_0_30px_rgba(168,85,247,0.1)]">
-                      <Layers size={64} className="text-purple-500 mb-4 drop-shadow-[0_0_15px_rgba(168,85,247,0.8)]" />
-                      <h3 className="text-2xl font-black uppercase text-purple-400 tracking-widest mb-2">Synthesis</h3>
-                      <p className="text-xs sm:text-sm text-slate-400 mb-6 h-12 font-read">Combine 10 Fragments to create 1 Data Pack.</p>
-                      <button 
-                          onClick={convertFragments}
-                          disabled={meta.fragments < 10}
-                          className={`w-full py-4 font-black uppercase tracking-widest rounded-sm transition-all border text-sm sm:text-base ${meta.fragments >= 10 ? 'bg-purple-900/40 text-purple-300 border-purple-500 hover:bg-purple-600 hover:text-white hover:shadow-[0_0_20px_rgba(168,85,247,0.6)]' : 'bg-black text-slate-600 border-slate-800 cursor-not-allowed'}`}
-                      >
-                          Synthesize Pack
-                      </button>
-                  </div>
+              <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 z-10 pb-12">
+                  {(() => {
+                      const accentKey = activeGachaTab.kind === 'banner' ? activeBanner.accent : 'violet';
+                      const AccentIcon = activeGachaTab.kind === 'banner' ? activeBanner.icon : Layers;
+                      const accentClasses = accentKey === 'emerald'
+                          ? {
+                              border: 'border-emerald-700/60',
+                              glow: 'shadow-[0_0_45px_rgba(16,185,129,0.18)]',
+                              title: 'text-emerald-200',
+                              icon: 'text-emerald-400',
+                              chip: 'bg-emerald-500 text-black',
+                              button: 'bg-emerald-100 text-black border-emerald-200 hover:bg-white hover:shadow-[0_0_22px_rgba(16,185,129,0.45)]',
+                              buttonAlt: 'bg-black/55 border-emerald-700/70 text-emerald-200 hover:border-emerald-300 hover:text-white',
+                              rail: 'from-emerald-500/30 via-emerald-400/10 to-transparent',
+                              haze: 'bg-[radial-gradient(circle_at_72%_35%,rgba(16,185,129,0.35),transparent_36%)]',
+                              panel: 'from-emerald-50 via-white to-slate-200',
+                            }
+                          : accentKey === 'amber'
+                          ? {
+                              border: 'border-amber-700/60',
+                              glow: 'shadow-[0_0_45px_rgba(245,158,11,0.18)]',
+                              title: 'text-amber-100',
+                              icon: 'text-amber-400',
+                              chip: 'bg-amber-400 text-black',
+                              button: 'bg-amber-100 text-black border-amber-200 hover:bg-white hover:shadow-[0_0_22px_rgba(245,158,11,0.45)]',
+                              buttonAlt: 'bg-black/55 border-amber-700/70 text-amber-200 hover:border-amber-300 hover:text-white',
+                              rail: 'from-amber-500/30 via-amber-400/10 to-transparent',
+                              haze: 'bg-[radial-gradient(circle_at_72%_35%,rgba(245,158,11,0.35),transparent_36%)]',
+                              panel: 'from-amber-50 via-white to-slate-200',
+                            }
+                          : accentKey === 'violet'
+                          ? {
+                              border: 'border-violet-700/60',
+                              glow: 'shadow-[0_0_45px_rgba(168,85,247,0.18)]',
+                              title: 'text-violet-100',
+                              icon: 'text-violet-400',
+                              chip: 'bg-violet-400 text-black',
+                              button: 'bg-violet-100 text-black border-violet-200 hover:bg-white hover:shadow-[0_0_22px_rgba(168,85,247,0.45)]',
+                              buttonAlt: 'bg-black/55 border-violet-700/70 text-violet-200 hover:border-violet-300 hover:text-white',
+                              rail: 'from-violet-500/30 via-violet-400/10 to-transparent',
+                              haze: 'bg-[radial-gradient(circle_at_72%_35%,rgba(168,85,247,0.35),transparent_36%)]',
+                              panel: 'from-violet-50 via-white to-slate-200',
+                            }
+                          : {
+                              border: 'border-cyan-700/60',
+                              glow: 'shadow-[0_0_45px_rgba(34,211,238,0.18)]',
+                              title: 'text-cyan-100',
+                              icon: 'text-cyan-400',
+                              chip: 'bg-cyan-400 text-black',
+                              button: 'bg-cyan-100 text-black border-cyan-200 hover:bg-white hover:shadow-[0_0_22px_rgba(34,211,238,0.45)]',
+                              buttonAlt: 'bg-black/55 border-cyan-700/70 text-cyan-200 hover:border-cyan-300 hover:text-white',
+                              rail: 'from-cyan-500/30 via-cyan-400/10 to-transparent',
+                              haze: 'bg-[radial-gradient(circle_at_72%_35%,rgba(34,211,238,0.35),transparent_36%)]',
+                              panel: 'from-cyan-50 via-white to-slate-200',
+                            };
 
-                  <div className="w-full max-w-[20rem] bg-slate-900/60 border border-blue-800/50 rounded-sm p-6 flex flex-col items-center text-center backdrop-blur-md shadow-[0_0_30px_rgba(59,130,246,0.1)]">
-                      <Package size={64} className="text-blue-500 mb-4 drop-shadow-[0_0_15px_rgba(59,130,246,0.8)]" />
-                      <h3 className="text-2xl font-black uppercase text-blue-400 tracking-widest mb-2">Extraction</h3>
-                      <p className="text-xs sm:text-sm text-slate-400 mb-6 h-12 font-read">Open 1 Data Pack to extract 5 randomized cards.</p>
-                      <button 
-                          onClick={() => openPack(1)}
-                          disabled={meta.packs < 1}
-                          className={`w-full py-4 font-black uppercase tracking-widest rounded-sm transition-all border text-sm sm:text-base ${meta.packs >= 1 ? 'bg-blue-900/40 text-blue-300 border-blue-500 hover:bg-blue-600 hover:text-white hover:shadow-[0_0_20px_rgba(59,130,246,0.6)]' : 'bg-black text-slate-600 border-slate-800 cursor-not-allowed'}`}
-                      >
-                          Open 1 Pack
-                      </button>
-                      <button 
-                          onClick={() => openPack(10)}
-                          disabled={meta.packs < 10}
-                          className={`w-full py-3 mt-2 font-black uppercase tracking-widest rounded-sm transition-all border text-sm ${meta.packs >= 10 ? 'bg-gradient-to-r from-blue-900/40 to-purple-900/40 text-blue-200 border-blue-400 hover:from-blue-600 hover:to-purple-600 hover:text-white hover:shadow-[0_0_25px_rgba(59,130,246,0.8)]' : 'bg-black text-slate-600 border-slate-800 cursor-not-allowed'}`}
-                      >
-                          Open 10x Packs
-                      </button>
-                  </div>
+                      const featuredCards = activeBanner ? activeBanner.featuredCards : ['m3', 'u3', 'a7'];
+
+                      return (
+                          <div className={`relative overflow-hidden rounded-[1.75rem] border bg-slate-950/80 backdrop-blur-md h-[44rem] ${accentClasses.border} ${accentClasses.glow}`}>
+                              <div className={`absolute inset-0 ${accentClasses.haze}`} />
+                              <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.03),transparent_35%,rgba(255,255,255,0.04)_62%,transparent_78%)]" />
+                              <div className="relative flex flex-col lg:flex-row h-full">
+                                  <div className="lg:w-[6.5rem] shrink-0 border-b lg:border-b-0 lg:border-r border-white/8 bg-black/35">
+                                      <div className={`absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b ${accentClasses.rail} hidden lg:block`} />
+                                      <div className="flex lg:flex-col gap-2 p-3 sm:p-4 overflow-x-auto lg:overflow-visible">
+                                          {GACHA_TABS.map((tab) => {
+                                              const isActive = tab.id === activeGachaTabId;
+                                              const RailIcon = tab.icon;
+                                              return (
+                                                  <button
+                                                      key={tab.id}
+                                                      onClick={() => setActiveGachaTabId(tab.id)}
+                                                      className={`relative min-w-[5.5rem] lg:min-w-0 lg:w-full h-20 lg:h-24 rounded-2xl border transition-all overflow-hidden group ${isActive ? 'border-white/70 bg-white/12 shadow-[0_0_24px_rgba(255,255,255,0.14)] scale-[1.02]' : 'border-white/10 bg-black/35 hover:border-white/30 hover:bg-white/6'}`}
+                                                  >
+                                                      <div className={`absolute inset-0 ${isActive ? 'bg-[linear-gradient(145deg,rgba(255,255,255,0.18),transparent_60%)]' : 'bg-[linear-gradient(145deg,rgba(255,255,255,0.06),transparent_60%)]'}`} />
+                                                      <div className="relative h-full flex flex-col items-center justify-center gap-2 px-2">
+                                                          <RailIcon size={22} className={`${isActive ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'} transition-colors`} />
+                                                          <span className={`text-[9px] sm:text-[10px] leading-tight font-black uppercase tracking-[0.18em] text-center ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                                                              {tab.name.replace(' Pack', '')}
+                                                          </span>
+                                                      </div>
+                                                  </button>
+                                              );
+                                          })}
+                                      </div>
+                                  </div>
+
+                                  <div className="flex-1 grid lg:grid-cols-[20rem_minmax(0,1fr)]">
+                                      <div className={`relative bg-gradient-to-b ${accentClasses.panel} text-slate-950 p-5 sm:p-7 lg:p-8 h-full`}>
+                                          <div className="absolute inset-y-0 right-0 w-px bg-black/10" />
+                                          <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] ${accentClasses.chip}`}>
+                                              <AccentIcon size={14} />
+                                              {activeGachaTab.kind === 'banner' ? 'Featured Warp' : 'Conversion Node'}
+                                          </div>
+                                          <h3 className="mt-5 text-4xl sm:text-5xl font-black tracking-tight leading-none">{
+                                              activeGachaTab.kind === 'banner' ? activeBanner.name : activeGachaTab.name
+                                          }</h3>
+                                          <p className="mt-5 text-sm sm:text-base text-slate-600 font-read leading-relaxed">
+                                              {activeGachaTab.kind === 'banner'
+                                                ? activeBanner.description
+                                                : 'Refine 10 Fragments into 1 Data Pack. Future upgrades can route this node into banner-specific synthesis and direct fragment purchases.'}
+                                          </p>
+                                          <div className="mt-5 text-xs sm:text-sm font-black uppercase tracking-[0.18em] text-slate-500">
+                                              {activeGachaTab.kind === 'banner'
+                                                ? 'Every 10 pulls guarantees a higher-rarity card.'
+                                                : 'Current conversion rate: 10 Fragments -> 1 Data Pack.'}
+                                          </div>
+
+                                          <div className="mt-8 flex flex-wrap gap-3">
+                                              {activeGachaTab.kind === 'banner' ? (
+                                                  <button
+                                                      onClick={() => setPreviewBannerId(activeBanner.id)}
+                                                      className="px-5 py-3 rounded-full border border-black/10 bg-white/70 text-slate-900 text-xs sm:text-sm font-black uppercase tracking-[0.18em] hover:bg-white transition-colors"
+                                                  >
+                                                      View Pool
+                                                  </button>
+                                              ) : null}
+                                          </div>
+                                      </div>
+
+                                      <div className="relative p-5 sm:p-7 lg:p-8 flex flex-col justify-between h-full min-h-0">
+                                          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),transparent_28%,rgba(255,255,255,0.03)_100%)]" />
+                                          <div className="relative flex-1 flex items-center justify-center">
+                                              <div className="absolute inset-x-[8%] bottom-[8%] h-16 rounded-[999px] bg-white/8 blur-2xl" />
+                                              <div className={`absolute left-[16%] top-[14%] text-[11rem] sm:text-[14rem] font-black leading-none opacity-[0.06] ${accentClasses.title}`}>
+                                                  01
+                                              </div>
+                                              <div className="relative z-10 flex flex-col items-center justify-center">
+                                                  <div className={`absolute inset-0 blur-3xl opacity-60 ${accentKey === 'emerald' ? 'bg-emerald-400/20' : accentKey === 'amber' ? 'bg-amber-400/20' : accentKey === 'violet' ? 'bg-violet-400/20' : 'bg-cyan-400/20'}`} />
+                                                  {activeGachaTab.kind === 'banner' ? (
+                                                      <div className="relative flex gap-2 sm:gap-4 items-end justify-center">
+                                                          {featuredCards.map((cardId, idx) => (
+                                                              (() => {
+                                                                  const isSelected = selectedFeaturedCardId
+                                                                      ? selectedFeaturedCardId === cardId
+                                                                      : idx === 1;
+                                                                  const isHovered = hoveredFeaturedCardId === cardId;
+                                                                  const tiltClass = isHovered
+                                                                      ? idx === 0
+                                                                          ? '-rotate-[8deg]'
+                                                                          : idx === 2
+                                                                            ? 'rotate-[8deg]'
+                                                                            : '-rotate-[3deg]'
+                                                                      : idx === 0
+                                                                        ? '-rotate-[4deg]'
+                                                                        : idx === 2
+                                                                          ? 'rotate-[4deg]'
+                                                                          : 'rotate-0';
+                                                                  const elevateClass = isSelected
+                                                                      ? 'scale-[1.08] sm:scale-[1.18] z-30 -translate-y-3 sm:-translate-y-5'
+                                                                      : idx === 1
+                                                                        ? 'scale-[0.92] sm:scale-[1.02] z-20'
+                                                                        : idx === 0
+                                                                          ? 'translate-x-3 sm:translate-x-6 scale-[0.78] sm:scale-[0.86] z-10'
+                                                                          : '-translate-x-3 sm:-translate-x-6 scale-[0.78] sm:scale-[0.86] z-10';
+                                                                  return (
+                                                              <div
+                                                                  key={`${activeGachaTab.id}-hero-${cardId}`}
+                                                                  onClick={() => setSelectedFeaturedCardId((current) => current === cardId ? null : cardId)}
+                                                                  onMouseEnter={() => setHoveredFeaturedCardId(cardId)}
+                                                                  onMouseLeave={() => setHoveredFeaturedCardId(null)}
+                                                                  className={`origin-bottom transition-transform duration-300 cursor-pointer ${elevateClass} ${tiltClass}`}
+                                                              >
+                                                                  <div className="transition-transform duration-300 [perspective:1200px]">
+                                                                      <div className={`transition-transform duration-300 ${isHovered ? '[transform:rotateX(10deg)]' : ''}`}>
+                                                                          <Card cardId={cardId} level={getCardLevel(cardId)} overrideValue={getCardValue(CARD_DB[cardId], getCardLevel(cardId))} scale={isSelected ? 1.16 : idx === 1 ? 1.05 : 0.92} />
+                                                                      </div>
+                                                                  </div>
+                                                              </div>
+                                                                  );
+                                                              })()
+                                                          ))}
+                                                      </div>
+                                                  ) : (
+                                                      <div className="relative w-full max-w-md rounded-[2rem] border border-white/10 bg-black/30 backdrop-blur-sm p-8 sm:p-10">
+                                                          <div className="absolute inset-0 bg-[linear-gradient(140deg,rgba(255,255,255,0.08),transparent_55%)] rounded-[2rem]" />
+                                                          <div className="relative flex flex-col items-center text-center">
+                                                              <Layers size={72} className="text-violet-300 drop-shadow-[0_0_20px_rgba(168,85,247,0.8)]" />
+                                                              <div className="mt-6 text-sm uppercase tracking-[0.35em] text-violet-200/70">Fragment Refinery</div>
+                                                              <div className="mt-4 text-5xl sm:text-6xl font-black text-white">{Math.floor(meta.fragments / 10)}</div>
+                                                              <div className="mt-2 text-xs sm:text-sm uppercase tracking-[0.24em] text-slate-400">Packs ready to synthesize</div>
+                                                              <div className="mt-8 w-full flex items-center justify-center gap-3 text-sm sm:text-base font-black">
+                                                                  <div className="px-4 py-3 rounded-full bg-violet-100 text-black min-w-[6rem]">{meta.fragments} Frags</div>
+                                                                  <ChevronRight size={20} className="text-violet-200" />
+                                                                  <div className="px-4 py-3 rounded-full bg-white text-black min-w-[6rem]">{Math.floor(meta.fragments / 10)} Packs</div>
+                                                              </div>
+                                                          </div>
+                                                      </div>
+                                                  )}
+                                              </div>
+                                          </div>
+
+                                          <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
+                                              <div className="text-xs sm:text-sm uppercase tracking-[0.24em] text-slate-500">
+                                                  {activeGachaTab.kind === 'banner' ? `${meta.packs} pulls available` : `${meta.fragments} fragments available`}
+                                              </div>
+                                              <div className="flex items-center gap-3">
+                                                  {activeGachaTab.kind === 'banner' ? (
+                                                      <>
+                                                          <button
+                                                              onClick={() => openPack(activeBanner.id, 1)}
+                                                              disabled={meta.packs < 1}
+                                                              className={`px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.packs >= 1 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
+                                                          >
+                                                              Pull x1
+                                                          </button>
+                                                          <button
+                                                              onClick={() => openPack(activeBanner.id, 10)}
+                                                              disabled={meta.packs < 10}
+                                                              className={`px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.packs >= 10 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
+                                                          >
+                                                              Pull x10
+                                                          </button>
+                                                      </>
+                                                  ) : (
+                                                      <button
+                                                          onClick={convertFragments}
+                                                          disabled={meta.fragments < 10}
+                                                          className={`px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.fragments >= 10 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
+                                                      >
+                                                          Synthesize Pack
+                                                      </button>
+                                                  )}
+                                              </div>
+                                          </div>
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
+                      );
+                  })()}
               </div>
           </div>
       );
@@ -3167,6 +3603,55 @@ export default function App() {
       {view === 'gacha' && renderGacha()}
       {view === 'gameover' && renderGameOver()}
       <div className="fixed inset-0 pointer-events-none z-[200]">
+        {activeDeathEffect && deathMonsterIconType ? (
+          <div
+            key={`enemy-death-${activeDeathEffect.id}`}
+            className="fixed pointer-events-none"
+            style={{
+              left: `${activeDeathEffect.rect.left}px`,
+              top: `${activeDeathEffect.rect.top}px`,
+              width: `${activeDeathEffect.rect.width}px`,
+              height: `${activeDeathEffect.rect.height}px`,
+            }}
+          >
+            <div className="relative w-full h-full">
+              <div className={`absolute left-1/2 top-1/2 w-32 h-32 rounded-full blur-[12px] ${activeDeathEffect.monster.isBoss ? 'bg-red-300/90' : 'bg-cyan-200/95'} animate-[enemy-overload-core_0.28s_cubic-bezier(0.16,0.84,0.24,1)_forwards]`} />
+              <div className={`absolute left-1/2 top-1/2 w-44 h-44 rounded-full border-2 ${activeDeathEffect.monster.isBoss ? 'border-red-100/90 shadow-[0_0_42px_rgba(248,113,113,0.82)]' : 'border-cyan-50/95 shadow-[0_0_42px_rgba(34,211,238,0.95)]'} animate-[enemy-overload-ring_0.34s_cubic-bezier(0.12,0.82,0.22,1)_forwards]`} />
+              <div className={`absolute left-1/2 top-1/2 w-64 h-64 rounded-full border ${activeDeathEffect.monster.isBoss ? 'border-red-300/65 shadow-[0_0_34px_rgba(248,113,113,0.55)]' : 'border-cyan-200/70 shadow-[0_0_34px_rgba(34,211,238,0.6)]'} animate-[enemy-overload-ring_0.46s_cubic-bezier(0.12,0.82,0.22,1)_forwards]`} style={{ animationDelay: '35ms' }} />
+              <div className={`absolute left-1/2 top-1/2 w-80 h-80 rounded-full border ${activeDeathEffect.monster.isBoss ? 'border-red-400/35 shadow-[0_0_28px_rgba(248,113,113,0.35)]' : 'border-cyan-300/40 shadow-[0_0_28px_rgba(34,211,238,0.4)]'} animate-[enemy-overload-ring_0.56s_cubic-bezier(0.12,0.82,0.22,1)_forwards]`} style={{ animationDelay: '70ms' }} />
+              <div className={`absolute inset-0 rounded-sm border-2 overflow-hidden animate-[enemy-death_0.34s_cubic-bezier(0.18,0.82,0.24,1)_forwards] ${activeDeathEffect.monster.isBoss ? 'bg-gradient-to-br from-red-950 via-red-950/95 to-black border-red-500 shadow-[0_0_65px_rgba(255,0,0,0.55)]' : 'bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border-cyan-400/50 shadow-[0_0_44px_rgba(0,255,255,0.32)]'}`}>
+                <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:100%_4px]" />
+                <div className={`absolute inset-0 ${activeDeathEffect.monster.isBoss ? 'bg-red-100/55' : 'bg-cyan-50/60'} mix-blend-screen animate-[enemy-death-flash_0.18s_ease-out_forwards]`} />
+                <div className={`absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.95)_0%,${activeDeathEffect.monster.isBoss ? 'rgba(248,113,113,0.65)' : 'rgba(34,211,238,0.6)'}_24%,rgba(255,255,255,0)_60%)] animate-[enemy-overload-core_0.24s_cubic-bezier(0.16,0.84,0.24,1)_forwards]`} />
+                <div className="absolute inset-x-0 bottom-0 h-[92%] bg-[linear-gradient(180deg,rgba(34,211,238,0)_0%,rgba(34,211,238,0.12)_28%,rgba(255,255,255,0.75)_100%)] animate-[enemy-data-scan_0.24s_ease-out_forwards]" />
+                <div className="absolute inset-x-3 bottom-3 top-3 flex items-center justify-center">
+                  {React.createElement(deathMonsterIconType, {
+                    size: 84,
+                    className: `${activeDeathEffect.monster.isBoss ? 'text-red-300' : 'text-cyan-200'} drop-shadow-[0_0_22px_currentColor]`,
+                  })}
+                </div>
+              </div>
+              {activeDeathEffect.shards.map((shard) => (
+                <div
+                  key={`enemy-death-shard-${activeDeathEffect.id}-${shard.id}`}
+                  className={`absolute rounded-[2px] border ${activeDeathEffect.monster.isBoss ? 'bg-red-300/95 border-red-50/80 shadow-[0_0_18px_rgba(248,113,113,0.8)]' : 'bg-cyan-100/100 border-white/85 shadow-[0_0_20px_rgba(34,211,238,0.95)]'}`}
+                  style={{
+                    left: `${shard.left}px`,
+                    top: `${shard.top}px`,
+                    width: `${shard.size}px`,
+                    height: `${Math.max(7, shard.size * 0.82)}px`,
+                    '--shard-x': `${shard.driftX}px`,
+                    '--shard-y': `${-shard.driftY}px`,
+                    '--shard-rot': `${shard.rotate}deg`,
+                    '--shard-opacity': `${shard.opacity}`,
+                    animationDelay: `${shard.delay}ms`,
+                    animation: `enemy-data-shard ${shard.duration}ms cubic-bezier(0.12,0.82,0.22,1) forwards`,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
         {run.activeEffects.map(fx => (
           fx.cardObj && fx.launchOrigin ? (
             <div
@@ -3196,55 +3681,68 @@ export default function App() {
         ))}
         {drawAnimations.map((fx) => (
           <React.Fragment key={`draw-ghost-${fx.id}`}>
-            <div
-              className="fixed pointer-events-none animate-[draw-card-trail_0.54s_cubic-bezier(0.12,0.74,0.2,1)_forwards]"
-              style={{
-                left: `${fx.origin.x}px`,
-                top: `${fx.origin.y}px`,
-                '--draw-dx': `${fx.target.x - fx.origin.x}px`,
-                '--draw-dy': `${fx.target.y - fx.origin.y}px`,
-                animationDelay: `${fx.staggerMs}ms`,
-              }}
-            >
-              <div className="w-10 h-28 rounded-full bg-gradient-to-t from-cyan-400/0 via-cyan-300/55 to-white/90 blur-[3px]" />
-            </div>
+            {fx.showHolo ? (
+              <div
+                className="fixed pointer-events-none animate-[draw-card-trail_0.54s_cubic-bezier(0.12,0.74,0.2,1)_forwards]"
+                style={{
+                  left: `${fx.origin.x}px`,
+                  top: `${fx.origin.y}px`,
+                  '--draw-dx': `${fx.target.x - fx.origin.x}px`,
+                  '--draw-dy': `${fx.target.y - fx.origin.y}px`,
+                  animationDelay: `${fx.staggerMs}ms`,
+                }}
+              >
+                <div className="w-10 h-28 rounded-full bg-gradient-to-t from-cyan-400/0 via-cyan-300/55 to-white/90 blur-[3px]" />
+              </div>
+            ) : null}
             <div
               className="fixed pointer-events-none animate-[draw-card-flight_0.54s_cubic-bezier(0.12,0.74,0.2,1)_forwards]"
               style={{
                 left: `${fx.origin.x}px`,
                 top: `${fx.origin.y}px`,
+                width: `${fx.target.width || fx.origin.width || 128}px`,
+                height: `${fx.target.height || fx.origin.height || 192}px`,
                 '--draw-dx': `${fx.target.x - fx.origin.x}px`,
                 '--draw-dy': `${fx.target.y - fx.origin.y}px`,
                 animationDelay: `${fx.staggerMs}ms`,
               }}
             >
               <div
-                className="relative animate-[draw-card-holo_0.54s_linear_forwards]"
-                style={{ width: `${fx.target.width || 128}px`, height: `${fx.target.height || 192}px` }}
+                className={`relative w-full h-full overflow-hidden rounded ${fx.showHolo ? 'shadow-[0_0_16px_rgba(34,211,238,0.18)] animate-[draw-card-holo_0.54s_linear_forwards]' : ''}`}
               >
-                <div className="absolute inset-[2px] rounded-[3px] bg-[linear-gradient(180deg,rgba(255,255,255,0.28),rgba(34,211,238,0.06))] mix-blend-screen" />
-                <Card
-                  overrideCard={fx.cardObj}
-                  pixelWidth={fx.target.width || 128}
-                  pixelHeight={fx.target.height || 192}
-                  level={fx.cardObj.currentLevel}
-                  overrideValue={fx.cardObj.currentValue}
-                  disableInteraction={true}
-                />
-                <div className="absolute inset-[2px] rounded-[3px] border border-cyan-200/85 shadow-[0_0_14px_rgba(34,211,238,0.42)]" />
-                <div className="absolute inset-[2px] rounded-[3px] bg-[repeating-linear-gradient(180deg,rgba(255,255,255,0.14)_0px,rgba(255,255,255,0.14)_2px,rgba(34,211,238,0)_2px,rgba(34,211,238,0)_6px)] opacity-55 mix-blend-screen" />
+                <div className="absolute inset-0">
+                  <Card
+                    overrideCard={fx.cardObj}
+                    pixelWidth={fx.target.width || fx.origin.width || 128}
+                    pixelHeight={fx.target.height || fx.origin.height || 192}
+                    level={fx.cardObj.currentLevel}
+                    overrideValue={fx.cardObj.currentValue}
+                    disableInteraction={true}
+                  />
+                </div>
+                {fx.showHolo ? (
+                  <>
+                    <div className="absolute inset-[2px] rounded-[4px] bg-[linear-gradient(180deg,rgba(255,255,255,0.28),rgba(34,211,238,0.06))] mix-blend-screen" />
+                    <div className="absolute inset-[2px] rounded-[4px] border border-cyan-200/85 shadow-[0_0_14px_rgba(34,211,238,0.42)]" />
+                    <div className="absolute inset-[2px] rounded-[4px] bg-[repeating-linear-gradient(180deg,rgba(255,255,255,0.14)_0px,rgba(255,255,255,0.14)_2px,rgba(34,211,238,0)_2px,rgba(34,211,238,0)_6px)] opacity-55 mix-blend-screen" />
+                  </>
+                ) : null}
               </div>
             </div>
-            <div
-              className="fixed pointer-events-none animate-[draw-card-arrive_0.28s_ease-out_forwards]"
-              style={{
-                left: `${fx.target.x}px`,
-                top: `${fx.target.y}px`,
-                animationDelay: `${fx.staggerMs + 320}ms`,
-              }}
-            >
-              <div className="w-20 h-28 rounded-sm border border-cyan-100/75 bg-cyan-200/12 shadow-[0_0_34px_rgba(34,211,238,0.75)]" />
-            </div>
+            {fx.showHolo ? (
+              <div
+                className="fixed pointer-events-none animate-[draw-card-arrive_0.28s_ease-out_forwards]"
+                style={{
+                  left: `${fx.target.x - (fx.target.width || 128) / 2}px`,
+                  top: `${fx.target.y - (fx.target.height || 192) / 2}px`,
+                  width: `${fx.target.width || 128}px`,
+                  height: `${fx.target.height || 192}px`,
+                  animationDelay: `${fx.staggerMs + 320}ms`,
+                }}
+              >
+                <div className="w-full h-full rounded-sm border border-cyan-100/75 bg-cyan-200/12 shadow-[0_0_34px_rgba(34,211,238,0.75)]" />
+              </div>
+            ) : null}
           </React.Fragment>
         ))}
       </div>

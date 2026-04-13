@@ -1,4 +1,4 @@
-id,name,type,cost,color,value,desc,icon,manaBonus,multiHit,isHeal
+id,name,type,cost,color,value,desc,icon,manaBonus,multiHit,atkBuff,isHeal
 m1,Mana Spark,mana,0,W,1,+[VAL] Mana,Sparkles,,,
 m2,Growth,mana,0,G,2,+[VAL] Mana,Leaf,,,
 m3,Leyline Surge,mana,0,B,3,+[VAL] Mana,Droplets,,,
@@ -14,8 +14,11 @@ a6,Doom Blade,atk,5,W,80,[VAL] Heavy Dmg,Skull,,,
 a7,Cyber Slash,atk,2,W,20,[VAL] Dmg,Target,,,
 a8,Quick Slash,atk,0,W,3,[VAL] Damage,Sword,,,
 a9,Meteor Strike,atk,4,R,55,[VAL] Heavy Dmg,Sun,,,
-a10,Double Tap,atk,1,W,4,[VAL] Dmg x2,Crosshair,,2,
+a10,Double Tap,atk,1,W,4,[VAL] Dmg x2,Crosshair,,2,,
 a11,Void Ray,atk,7,B,150,[VAL] Massive Dmg,Eye,,,
+a12,Spark Barrage,atk,2,Y,3,[VAL] Dmg x3,ChevronsUp,,3,,
+a13,Razor Storm,atk,3,Y,4,[VAL] Dmg x4,Wind,,4,,
+a14,Needle Burst,atk,1,Y,2,[VAL] Dmg x4,Crosshair,,4,,
 d1,Minor Shield,def,1,W,3,[VAL] Block,Shield,,,
 d2,Great Shield,def,2,W,10,[VAL] Block,ShieldPlus,,,
 d3,Aegis,def,4,W,30,[VAL] Block,Anvil,,,
@@ -25,5 +28,7 @@ u1,Cycle,util,0,W,1,Draw [VAL],RotateCcw,,,
 u2,Quick Draw,util,1,W,2,Draw [VAL],FastForward,,,
 u3,Pot of Greed,util,2,W,3,Draw [VAL],Magnet,,,
 u4,Deep Search,util,3,B,4,Draw [VAL],Search,,,
-h1,Mending Light,util,2,G,10,Heal [VAL] HP,Cross,,,true
-h2,Vitality,util,4,G,25,Heal [VAL] HP,Dna,,,true
+u5,Battle Rhythm,util,1,R,2,Gain +[VAL] Power,Activity,,,2,
+u6,Chain Protocol,util,2,R,4,Gain +[VAL] Power,Cpu,,,4,
+h1,Mending Light,util,2,G,10,Heal [VAL] HP,Cross,,,,true
+h2,Vitality,util,4,G,25,Heal [VAL] HP,Dna,,,,true
