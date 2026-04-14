@@ -1309,6 +1309,7 @@ export default function App() {
   const [sortMethod, setSortMethod] = useState('cost'); 
   const gameFrameRef = useRef(null);
   const [gameFrameRect, setGameFrameRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  const [isMobileViewport, setIsMobileViewport] = useState(() => window.innerWidth < 768);
   
   const [meta, setMeta] = useState(() => {
     const saved = localStorage.getItem('codexIdleSaveData');
@@ -1486,6 +1487,15 @@ export default function App() {
           observer.disconnect();
           window.removeEventListener('resize', updateRect);
       };
+  }, []);
+
+  useEffect(() => {
+      const updateViewportMode = () => {
+          setIsMobileViewport(window.innerWidth < 768);
+      };
+      updateViewportMode();
+      window.addEventListener('resize', updateViewportMode);
+      return () => window.removeEventListener('resize', updateViewportMode);
   }, []);
 
   useEffect(() => {
@@ -3940,10 +3950,16 @@ export default function App() {
     <div className="w-screen h-[100dvh] bg-black overflow-hidden flex items-center justify-center select-none">
       <div
         className="overflow-hidden bg-black shadow-2xl relative"
-        style={{
-          width: 'min(100vw, calc(100dvh * 16 / 9))',
-          height: 'min(100dvh, calc(100vw * 9 / 16))',
-        }}
+        style={isMobileViewport
+          ? {
+              width: '100vw',
+              height: '100dvh',
+            }
+          : {
+              width: 'min(100vw, calc(100dvh * 16 / 9))',
+              height: 'min(100dvh, calc(100vw * 9 / 16))',
+            }}
+        ref={gameFrameRef}
       >
         {view === 'menu' && renderMenu()}
         {view === 'dungeons' && renderDungeonSelect()}
