@@ -156,6 +156,8 @@ const STAGE_DEFS = {
     summary: 'Character-driven meta systems, stickers, and full gacha-era progression.',
   },
 };
+const ALL_STAGE_IDS = Object.keys(STAGE_DEFS).map(Number).sort((a, b) => a - b);
+const ALL_FEATURE_IDS = Object.keys(FEATURE_LABELS);
 const buildDungeonNodes = (totalRooms, specialNodes) => {
   const specialMap = new Map(specialNodes.map((node) => [node.room, node.value]));
   return Array.from({ length: totalRooms }, (_, index) => {
@@ -211,11 +213,15 @@ const DUNGEON_MAP = Object.fromEntries(DUNGEON_DEFS.map((dungeon) => [dungeon.id
 const SKILL_STAGE_MAP = {
   hand_size: 1,
   opening_hand: 1,
+  hold_to_repeat: 1,
   start_mana: 1,
   dmg_boost: 1,
+  vitality_boost: 1,
   draw_multi: 1,
   start_mana_card: 1,
   first_strike: 1,
+  scavenger: 1,
+  mob_slayer: 1,
   heavy_strike: 1,
   boss_slayer: 1,
   shield_boost: 1,
@@ -225,7 +231,8 @@ const SKILL_STAGE_MAP = {
   free_util: 1,
   overkill: 1,
   multi_strike: 1,
-  auto_play_mana: 2,
+  auto_play_mana: 1,
+  boss_bounty: 1,
   mana_retain: 2,
   mana_surge: 2,
   free_low_cost: 2,
@@ -292,80 +299,127 @@ loadGameData();
 const UPGRADE_COSTS = [5, 10, 20]; 
 
 // --- Grand Skill Architecture ---
+const makeParameterSkill = (config) => ({ maxRank: 3, nodeType: 'parameter', ...config });
+const makeFeatureSkill = (config) => ({ maxRank: 1, nodeType: 'feature', ...config });
 const SKILL_TREE_DICT = {
-  hand_size:       { id: 'hand_size', name: 'Ample Grip', desc: '+1 Max Hand Size', cost: 100, icon: Hand, branch: 'core', requiresAny: [], effect: (s) => ({ ...s, maxHand: s.maxHand + 1 }) },
-  opening_hand:    { id: 'opening_hand', name: 'Preparation', desc: '+1 Opening Hand', cost: 500, branch: 'sys', requiresAny: ['hand_size'], icon: BookOpen, effect: (s) => ({ ...s, openingHand: s.openingHand + 1 }) },
-  start_mana:      { id: 'start_mana', name: 'Leyline Tap', desc: 'Start fights with +1 Mana', cost: 500, branch: 'flow', requiresAny: ['hand_size'], icon: Zap, effect: (s) => ({ ...s, startMana: s.startMana + 1 }) },
-  dmg_boost:       { id: 'dmg_boost', name: 'Sharpened Mind', desc: '+2 Damage to all cards', cost: 500, branch: 'dmg', requiresAny: ['hand_size'], icon: Sword, effect: (s) => ({ ...s, dmgMod: s.dmgMod + 2 }) },
-  draw_multi:      { id: 'draw_multi', name: 'Dual Draw', desc: 'Draw 2 cards per action', cost: 1500, branch: 'sys', requiresAny: ['opening_hand'], icon: Copy, effect: (s) => ({ ...s, drawMulti: 2 }) },
-  start_mana_card: { id: 'start_mana_card', name: 'Spark Attunement', desc: 'Always draw Mana first', cost: 1500, branch: 'flow', requiresAny: ['start_mana'], icon: Star, effect: (s) => ({ ...s, startWithManaCard: true }) },
-  first_strike:    { id: 'first_strike', name: 'First Strike', desc: '2x Dmg vs Full HP', cost: 1500, branch: 'dmg', requiresAny: ['dmg_boost'], icon: Flame, effect: (s) => ({ ...s, firstStrike: true }) },
-  heavy_strike:    { id: 'heavy_strike', name: 'Heavy Blow', desc: '+15 Dmg for 3+ Cost cards', cost: 6000, branch: 'dmg', requiresAny: ['first_strike', 'heavy_armor'], icon: Crosshair, effect: (s) => ({ ...s, heavyDmgMod: s.heavyDmgMod + 15 }) },
-  auto_draw:       { id: 'auto_draw', name: 'Cyber Draw', desc: 'Auto-Draw 1 / 3s', cost: 6000, branch: 'sys', requiresAny: ['draw_multi', 'free_util'], icon: Cpu, effect: (s) => ({ ...s, autoDrawRate: 3 }) },
-  draw_on_atk:     { id: 'draw_on_atk', name: 'Battle Reflex', desc: 'Draw 1 on Attack', cost: 6000, branch: 'sys', requiresAny: ['draw_multi'], icon: Crosshair, effect: (s) => ({ ...s, drawOnAtk: true }) },
-  mana_surge:      { id: 'mana_surge', name: 'Overcharge', desc: 'Mana cards give +1 extra', cost: 6000, branch: 'flow', requiresAny: ['start_mana_card', 'passive_flow'], icon: Battery, effect: (s) => ({ ...s, manaSurge: true }) },
-  boss_slayer:     { id: 'boss_slayer', name: 'Boss Slayer', desc: '+50% Dmg vs Bosses', cost: 6000, branch: 'dmg', requiresAny: ['first_strike', 'kinetic_mana'], icon: Skull, effect: (s) => ({ ...s, bossSlayer: true }) },
-  auto_play_mana:  { id: 'auto_play_mana', name: 'Mana AI', desc: 'Auto-play Mana cards', cost: 1500, branch: 'util', requiresAny: ['shield_boost'], icon: Play, effect: (s) => ({ ...s, autoPlayMana: true }) },
-  mana_retain:     { id: 'mana_retain', name: 'Mana Flow', desc: 'Keep 50% Mana on kill', cost: 6000, branch: 'flow', requiresAny: ['start_mana_card', 'kinetic_mana'], icon: Lock, effect: (s) => ({ ...s, manaRetain: 0.5 }) },
-  overkill:        { id: 'overkill', name: 'Piercing Strike', desc: 'Overkill damage spills over', cost: 12000, branch: 'dmg', requiresAny: ['heavy_strike', 'boss_slayer'], icon: FastForward, effect: (s) => ({ ...s, overkill: true }) },
-  free_low_cost:   { id: 'free_low_cost', name: 'Cost Collapse', desc: '1-Cost cards become FREE', cost: 6000, branch: 'util', requiresAny: ['auto_play_mana', 'free_util'], icon: Tag, effect: (s) => ({ ...s, freeLowCost: true }) },
-  auto_gen:        { id: 'auto_gen', name: 'Passive Flow', desc: 'Regen 1 Mana / 5s', cost: 12000, branch: 'cross', requiresAny: ['mana_retain', 'boss_slayer'], icon: Activity, effect: (s) => ({ ...s, regenRate: s.regenRate + 0.2 }) },
-  overkill_chain:  { id: 'overkill_chain', name: 'Infinite Chain', desc: 'Overkill chains endlessly', cost: 25000, branch: 'dmg', requiresAny: ['overkill'], icon: Link, effect: (s) => ({ ...s, overkillChain: true }) },
-  deck_master:     { id: 'deck_master', name: 'Limit Break', desc: '+2 Max Hand', cost: 25000, branch: 'sys', requiresAny: ['auto_draw', 'draw_on_atk'], icon: Hexagon, effect: (s) => ({ ...s, maxHand: s.maxHand + 2 }) },
-  mana_refund:     { id: 'mana_refund', name: 'Echo Casting', desc: 'Cards refund 1 Mana', cost: 6000, branch: 'util', requiresAny: ['auto_play_mana', 'heavy_armor'], icon: RotateCcw, effect: (s) => ({ ...s, manaRefund: true }) },
-  shield_boost:    { id: 'shield_boost', name: 'Phalanx', desc: '+5 to all Shields', cost: 500, branch: 'util', requiresAny: ['hand_size'], icon: Shield, effect: (s) => ({ ...s, shieldBoost: s.shieldBoost + 5 }) },
-  heal_boost:      { id: 'heal_boost', name: 'Mending Aura', desc: 'Healing increased by 50%', cost: 12000, branch: 'util', requiresAny: ['free_low_cost', 'mana_refund'], icon: Heart, effect: (s) => ({ ...s, healBoost: true }) },
-  passive_flow:    { id: 'passive_flow', name: 'Passive Flow', desc: 'Regen 1 Mana / 5s', cost: 3000, branch: 'cross', requiresAny: ['opening_hand', 'start_mana'], icon: Activity, effect: (s) => ({ ...s, regenRate: s.regenRate + 0.2 }) },
-  kinetic_mana:    { id: 'kinetic_mana', name: 'Kinetic Energy', desc: 'Mana cards deal 5 Dmg', cost: 3000, branch: 'cross', requiresAny: ['start_mana', 'dmg_boost'], icon: Zap, effect: (s) => ({ ...s, kineticMana: true }) },
-  heavy_armor:     { id: 'heavy_armor', name: 'Heavy Armor', desc: 'Heavy attacks give 5 Shield', cost: 3000, branch: 'cross', requiresAny: ['dmg_boost', 'shield_boost'], icon: Shield, effect: (s) => ({ ...s, heavyArmor: true }) },
-  free_util:       { id: 'free_util', name: 'Fluid Mechanics', desc: 'Draw cards cost 0', cost: 3000, branch: 'cross', requiresAny: ['shield_boost', 'opening_hand'], icon: Tag, effect: (s) => ({ ...s, freeUtil: true }) },
-  mana_retain_full:{ id: 'mana_retain_full', name: 'Perfect Flow', desc: 'Keep 100% Mana on kill', cost: 25000, branch: 'flow', requiresAny: ['mana_surge', 'mana_retain'], icon: Lock, effect: (s) => ({ ...s, manaRetain: 1.0 }) },
-  multi_strike:    { id: 'multi_strike', name: 'Flurry', desc: 'Multi-hit cards hit +1 time', cost: 12000, branch: 'dmg', requiresAny: ['heavy_strike'], icon: Sword, effect: (s) => ({ ...s, multiStrike: true }) },
+  hand_size:       makeParameterSkill({ id: 'hand_size', name: 'Ample Grip', desc: '+1 Max Hand Size per rank', cost: 100, icon: Hand, branch: 'core', requiresAny: [], effect: (s) => ({ ...s, maxHand: s.maxHand + 1 }) }),
+  opening_hand:    makeParameterSkill({ id: 'opening_hand', name: 'Preparation', desc: '+1 Opening Hand per rank', cost: 500, branch: 'sys', requiresAny: ['hand_size'], icon: BookOpen, effect: (s) => ({ ...s, openingHand: s.openingHand + 1 }) }),
+  start_mana:      makeParameterSkill({ id: 'start_mana', name: 'Leyline Tap', desc: '+1 Start Mana per rank', cost: 500, branch: 'flow', requiresAny: ['hand_size'], icon: Zap, effect: (s) => ({ ...s, startMana: s.startMana + 1 }) }),
+  dmg_boost:       makeParameterSkill({ id: 'dmg_boost', name: 'Sharpened Mind', desc: '+2 Damage to all cards per rank', cost: 500, branch: 'dmg', requiresAny: ['hand_size'], icon: Sword, effect: (s) => ({ ...s, dmgMod: s.dmgMod + 2 }) }),
+  vitality_boost:  makeParameterSkill({ id: 'vitality_boost', name: 'Vital Core', desc: '+20 Max HP each run per rank', cost: 500, branch: 'core', requiresAny: ['hand_size'], icon: Heart, effect: (s) => ({ ...s, bonusHp: (s.bonusHp || 0) + 20 }) }),
+  draw_multi:      makeFeatureSkill({ id: 'draw_multi', name: 'Dual Draw', desc: 'Draw 2 cards per action', cost: 1500, branch: 'sys', requiresAny: ['opening_hand'], icon: Copy, effect: (s) => ({ ...s, drawMulti: 2 }) }),
+  hold_to_repeat:  makeFeatureSkill({ id: 'hold_to_repeat', name: 'Pulse Relay', desc: 'Hold right click to repeat actions', cost: 3000, branch: 'sys', requiresAny: ['draw_multi'], icon: Pointer, effect: (s) => ({ ...s, holdToRepeat: true }) }),
+  start_mana_card: makeFeatureSkill({ id: 'start_mana_card', name: 'Spark Attunement', desc: 'Always draw Mana first', cost: 1500, branch: 'flow', requiresAny: ['start_mana'], icon: Star, effect: (s) => ({ ...s, startWithManaCard: true }) }),
+  first_strike:    makeFeatureSkill({ id: 'first_strike', name: 'First Strike', desc: '2x Dmg vs Full HP', cost: 1500, branch: 'dmg', requiresAny: ['dmg_boost'], icon: Flame, effect: (s) => ({ ...s, firstStrike: true }) }),
+  scavenger:       makeParameterSkill({ id: 'scavenger', name: 'Scavenger Loop', desc: '+25% Fragment gain per rank', cost: 1500, branch: 'util', requiresAny: ['shield_boost'], icon: Layers, effect: (s) => ({ ...s, fragGainMult: (s.fragGainMult || 1) + 0.25 }) }),
+  mob_slayer:      makeParameterSkill({ id: 'mob_slayer', name: 'Line Breaker', desc: '+25% Damage vs normal enemies per rank', cost: 1500, branch: 'dmg', requiresAny: ['dmg_boost'], icon: Crosshair, effect: (s) => ({ ...s, normalEnemyDamageMult: (s.normalEnemyDamageMult || 1) + 0.25 }) }),
+  heavy_strike:    makeParameterSkill({ id: 'heavy_strike', name: 'Heavy Blow', desc: '+15 Damage for 3+ Cost cards per rank', cost: 6000, branch: 'dmg', requiresAny: ['first_strike', 'heavy_armor'], icon: Crosshair, effect: (s) => ({ ...s, heavyDmgMod: s.heavyDmgMod + 15 }) }),
+  auto_draw:       makeFeatureSkill({ id: 'auto_draw', name: 'Cyber Draw', desc: 'Auto-Draw 1 / 3s', cost: 6000, branch: 'sys', requiresAny: ['draw_multi', 'free_util'], icon: Cpu, effect: (s) => ({ ...s, autoDrawRate: 3 }) }),
+  draw_on_atk:     makeFeatureSkill({ id: 'draw_on_atk', name: 'Battle Reflex', desc: 'Draw 1 on Attack', cost: 6000, branch: 'sys', requiresAny: ['draw_multi'], icon: Crosshair, effect: (s) => ({ ...s, drawOnAtk: true }) }),
+  mana_surge:      makeFeatureSkill({ id: 'mana_surge', name: 'Overcharge', desc: 'Mana cards give +1 extra', cost: 6000, branch: 'flow', requiresAny: ['start_mana_card', 'passive_flow'], icon: Battery, effect: (s) => ({ ...s, manaSurge: true }) }),
+  boss_slayer:     makeFeatureSkill({ id: 'boss_slayer', name: 'Boss Slayer', desc: '+50% Damage vs Bosses', cost: 6000, branch: 'dmg', requiresAny: ['first_strike', 'kinetic_mana'], icon: Skull, effect: (s) => ({ ...s, bossSlayer: true }) }),
+  auto_play_mana:  makeFeatureSkill({ id: 'auto_play_mana', name: 'Mana AI', desc: 'Auto-play Mana cards', cost: 1500, branch: 'util', requiresAny: ['shield_boost'], icon: Play, effect: (s) => ({ ...s, autoPlayMana: true }) }),
+  boss_bounty:     makeParameterSkill({ id: 'boss_bounty', name: 'Boss Bounty', desc: '+50% GP from bosses per rank', cost: 3000, branch: 'util', requiresAny: ['auto_play_mana', 'mob_slayer'], icon: Coins, effect: (s) => ({ ...s, bossGpMult: (s.bossGpMult || 1) + 0.5 }) }),
+  mana_retain:     makeFeatureSkill({ id: 'mana_retain', name: 'Mana Flow', desc: 'Keep 50% Mana on kill', cost: 6000, branch: 'flow', requiresAny: ['start_mana_card', 'kinetic_mana'], icon: Lock, effect: (s) => ({ ...s, manaRetain: 0.5 }) }),
+  overkill:        makeFeatureSkill({ id: 'overkill', name: 'Piercing Strike', desc: 'Overkill damage spills over', cost: 12000, branch: 'dmg', requiresAny: ['heavy_strike', 'boss_slayer'], icon: FastForward, effect: (s) => ({ ...s, overkill: true }) }),
+  free_low_cost:   makeFeatureSkill({ id: 'free_low_cost', name: 'Cost Collapse', desc: '1-Cost cards become FREE', cost: 6000, branch: 'util', requiresAny: ['auto_play_mana', 'free_util'], icon: Tag, effect: (s) => ({ ...s, freeLowCost: true }) }),
+  auto_gen:        makeFeatureSkill({ id: 'auto_gen', name: 'Passive Flow', desc: 'Regen 1 Mana / 5s', cost: 12000, branch: 'cross', requiresAny: ['mana_retain', 'boss_slayer'], icon: Activity, effect: (s) => ({ ...s, regenRate: s.regenRate + 0.2 }) }),
+  overkill_chain:  makeFeatureSkill({ id: 'overkill_chain', name: 'Infinite Chain', desc: 'Overkill chains endlessly', cost: 25000, branch: 'dmg', requiresAny: ['overkill'], icon: Link, effect: (s) => ({ ...s, overkillChain: true }) }),
+  deck_master:     makeParameterSkill({ id: 'deck_master', name: 'Limit Break', desc: '+2 Max Hand per rank', cost: 25000, branch: 'sys', requiresAny: ['auto_draw', 'draw_on_atk'], icon: Hexagon, effect: (s) => ({ ...s, maxHand: s.maxHand + 2 }) }),
+  mana_refund:     makeFeatureSkill({ id: 'mana_refund', name: 'Echo Casting', desc: 'Cards refund 1 Mana', cost: 6000, branch: 'util', requiresAny: ['auto_play_mana', 'heavy_armor'], icon: RotateCcw, effect: (s) => ({ ...s, manaRefund: true }) }),
+  shield_boost:    makeParameterSkill({ id: 'shield_boost', name: 'Phalanx', desc: '+5 to all Shields per rank', cost: 500, branch: 'util', requiresAny: ['hand_size'], icon: Shield, effect: (s) => ({ ...s, shieldBoost: s.shieldBoost + 5 }) }),
+  heal_boost:      makeFeatureSkill({ id: 'heal_boost', name: 'Mending Aura', desc: 'Healing increased by 50%', cost: 12000, branch: 'util', requiresAny: ['free_low_cost', 'mana_refund'], icon: Heart, effect: (s) => ({ ...s, healBoost: true }) }),
+  passive_flow:    makeParameterSkill({ id: 'passive_flow', name: 'Passive Flow', desc: 'Regen 1 Mana / 5s per rank', cost: 3000, branch: 'cross', requiresAny: ['opening_hand', 'start_mana'], icon: Activity, effect: (s) => ({ ...s, regenRate: s.regenRate + 0.2 }) }),
+  kinetic_mana:    makeFeatureSkill({ id: 'kinetic_mana', name: 'Kinetic Energy', desc: 'Mana cards deal 5 Dmg', cost: 3000, branch: 'cross', requiresAny: ['start_mana', 'dmg_boost'], icon: Zap, effect: (s) => ({ ...s, kineticMana: true }) }),
+  heavy_armor:     makeFeatureSkill({ id: 'heavy_armor', name: 'Heavy Armor', desc: 'Heavy attacks give 5 Shield', cost: 3000, branch: 'cross', requiresAny: ['dmg_boost', 'shield_boost'], icon: Shield, effect: (s) => ({ ...s, heavyArmor: true }) }),
+  free_util:       makeFeatureSkill({ id: 'free_util', name: 'Fluid Mechanics', desc: 'Draw cards cost 0', cost: 3000, branch: 'cross', requiresAny: ['shield_boost', 'opening_hand'], icon: Tag, effect: (s) => ({ ...s, freeUtil: true }) }),
+  mana_retain_full:makeFeatureSkill({ id: 'mana_retain_full', name: 'Perfect Flow', desc: 'Keep 100% Mana on kill', cost: 25000, branch: 'flow', requiresAny: ['mana_surge', 'mana_retain'], icon: Lock, effect: (s) => ({ ...s, manaRetain: 1.0 }) }),
+  multi_strike:    makeFeatureSkill({ id: 'multi_strike', name: 'Flurry', desc: 'Multi-hit cards hit +1 time', cost: 12000, branch: 'dmg', requiresAny: ['heavy_strike'], icon: Sword, effect: (s) => ({ ...s, multiStrike: true }) }),
 };
 
 const NODE_POS = {
    hand_size:        { x: 50, y: 50 },
 
-   opening_hand:     { x: 50, y: 35 },
-   draw_multi:       { x: 50, y: 20 },
-   auto_draw:        { x: 35, y: 10 },
-   draw_on_atk:      { x: 65, y: 10 },
-   deck_master:      { x: 50, y: 5 },
+   opening_hand:     { x: 50, y: 40 },
+   draw_multi:       { x: 50, y: 30 },
+   hold_to_repeat:   { x: 40, y: 20 },
+   auto_draw:        { x: 50, y: 20 },
+   draw_on_atk:      { x: 60, y: 20 },
+   deck_master:      { x: 70, y: 30 },
 
-   start_mana:       { x: 65, y: 50 },
-   start_mana_card:  { x: 80, y: 50 },
-   mana_surge:       { x: 90, y: 35 },
-   mana_retain:      { x: 90, y: 65 },
-   mana_retain_full: { x: 95, y: 50 },
+   vitality_boost:   { x: 40, y: 40 },
+   shield_boost:     { x: 40, y: 60 },
+   start_mana:       { x: 60, y: 40 },
+   dmg_boost:        { x: 60, y: 60 },
 
-   dmg_boost:        { x: 50, y: 65 },
-   first_strike:     { x: 50, y: 80 },
-   heavy_strike:     { x: 35, y: 90 },
-   boss_slayer:      { x: 65, y: 90 },
-   multi_strike:     { x: 20, y: 95 },
-   overkill:         { x: 50, y: 95 },
-   overkill_chain:   { x: 80, y: 95 },
+   free_util:        { x: 40, y: 30 },
+   free_low_cost:    { x: 30, y: 20 },
+   auto_play_mana:   { x: 30, y: 70 },
+   scavenger:        { x: 30, y: 60 },
+   mana_refund:      { x: 40, y: 80 },
+   heal_boost:       { x: 30, y: 90 },
+   boss_bounty:      { x: 20, y: 80 },
 
-   shield_boost:     { x: 35, y: 50 },
-   auto_play_mana:   { x: 20, y: 50 },
-   free_low_cost:    { x: 10, y: 35 },
-   mana_refund:      { x: 10, y: 65 },
-   heal_boost:       { x: 5,  y: 50 },
+   passive_flow:     { x: 70, y: 30 },
+   start_mana_card:  { x: 70, y: 40 },
+   mana_surge:       { x: 80, y: 30 },
+   kinetic_mana:     { x: 70, y: 50 },
+   mana_retain:      { x: 80, y: 60 },
+   mana_retain_full: { x: 90, y: 20 },
+   auto_gen:         { x: 90, y: 70 },
 
-   passive_flow:     { x: 65, y: 35 },
-   kinetic_mana:     { x: 65, y: 65 },
-   heavy_armor:      { x: 35, y: 65 },
-   free_util:        { x: 35, y: 35 },
-   auto_gen:         { x: 80, y: 80 },
+   first_strike:     { x: 70, y: 70 },
+   mob_slayer:       { x: 80, y: 70 },
+   heavy_armor:      { x: 50, y: 70 },
+   heavy_strike:     { x: 60, y: 80 },
+   boss_slayer:      { x: 80, y: 80 },
+   multi_strike:     { x: 50, y: 90 },
+   overkill:         { x: 70, y: 90 },
+   overkill_chain:   { x: 80, y: 90 },
+};
+
+const VISUAL_PARENT_MAP = {
+  opening_hand: 'hand_size',
+  vitality_boost: 'hand_size',
+  shield_boost: 'hand_size',
+  start_mana: 'hand_size',
+  dmg_boost: 'hand_size',
+  draw_multi: 'opening_hand',
+  hold_to_repeat: 'draw_multi',
+  auto_draw: 'draw_multi',
+  draw_on_atk: 'draw_multi',
+  deck_master: 'draw_on_atk',
+  free_util: 'opening_hand',
+  free_low_cost: 'free_util',
+  auto_play_mana: 'shield_boost',
+  scavenger: 'auto_play_mana',
+  mana_refund: 'auto_play_mana',
+  heal_boost: 'mana_refund',
+  boss_bounty: 'auto_play_mana',
+  passive_flow: 'start_mana',
+  start_mana_card: 'start_mana',
+  mana_surge: 'start_mana_card',
+  kinetic_mana: 'start_mana_card',
+  mana_retain: 'kinetic_mana',
+  mana_retain_full: 'mana_surge',
+  auto_gen: 'mana_retain',
+  first_strike: 'dmg_boost',
+  mob_slayer: 'first_strike',
+  heavy_armor: 'shield_boost',
+  heavy_strike: 'first_strike',
+  boss_slayer: 'first_strike',
+  multi_strike: 'heavy_strike',
+  overkill: 'heavy_strike',
+  overkill_chain: 'overkill',
 };
 
 const BRANCH_COLORS = {
-    core:  { text: 'text-cyan-300', border: 'border-cyan-400', shadow: 'shadow-[0_0_20px_rgba(34,211,238,0.5)]', bg: 'bg-cyan-900/50' },
-    sys:   { text: 'text-blue-300', border: 'border-blue-400', shadow: 'shadow-[0_0_20px_rgba(96,165,250,0.5)]', bg: 'bg-blue-900/50' },
-    flow:  { text: 'text-emerald-300', border: 'border-emerald-400', shadow: 'shadow-[0_0_20px_rgba(52,211,153,0.5)]', bg: 'bg-emerald-900/50' },
-    dmg:   { text: 'text-red-300', border: 'border-red-400', shadow: 'shadow-[0_0_20px_rgba(248,113,113,0.5)]', bg: 'bg-red-900/50' },
-    util:  { text: 'text-purple-300', border: 'border-purple-400', shadow: 'shadow-[0_0_20px_rgba(192,132,252,0.5)]', bg: 'bg-purple-900/50' },
-    cross: { text: 'text-amber-300', border: 'border-amber-400', shadow: 'shadow-[0_0_20px_rgba(251,191,36,0.5)]', bg: 'bg-amber-900/50' },
+    core:  { text: 'text-cyan-300', border: 'border-cyan-400', shadow: 'shadow-[0_0_20px_rgba(34,211,238,0.5)]', bg: 'bg-cyan-950' },
+    sys:   { text: 'text-blue-300', border: 'border-blue-400', shadow: 'shadow-[0_0_20px_rgba(96,165,250,0.5)]', bg: 'bg-blue-950' },
+    flow:  { text: 'text-emerald-300', border: 'border-emerald-400', shadow: 'shadow-[0_0_20px_rgba(52,211,153,0.5)]', bg: 'bg-emerald-950' },
+    dmg:   { text: 'text-red-300', border: 'border-red-400', shadow: 'shadow-[0_0_20px_rgba(248,113,113,0.5)]', bg: 'bg-red-950' },
+    util:  { text: 'text-purple-300', border: 'border-purple-400', shadow: 'shadow-[0_0_20px_rgba(192,132,252,0.5)]', bg: 'bg-purple-950' },
+    cross: { text: 'text-amber-300', border: 'border-amber-400', shadow: 'shadow-[0_0_20px_rgba(251,191,36,0.5)]', bg: 'bg-amber-950' },
 };
 
 const CARD_BGS = {
@@ -394,7 +448,7 @@ const shuffle = (array) => {
 };
 
 const DEFAULT_META = {
-    saveVersion: 2,
+    saveVersion: 4,
     stage: 1,
     unlockedStages: [1],
     unlockedFeatures: [],
@@ -402,14 +456,17 @@ const DEFAULT_META = {
     gp: 0, fragments: 0, packs: 0,
     maxHand: 5, openingHand: 5,
     startMana: 0, regenRate: 0,
+    bonusHp: 0,
     dmgMod: 0, heavyDmgMod: 0, shieldBoost: 0, healBoost: false,
+    fragGainMult: 1, normalEnemyDamageMult: 1, bossGpMult: 1,
     manaRetain: 0, drawMulti: 1,
     startWithManaCard: false, overkill: false, overkillChain: false,
     freeLowCost: false, freeUtil: false,
     autoDrawRate: 0, autoPlayMana: false,
+    holdToRepeat: false,
     manaSurge: false, manaRefund: false, kineticMana: false,
     firstStrike: false, bossSlayer: false, heavyArmor: false, drawOnAtk: false, multiStrike: false,
-    unlockedSkills: [], collection: { 'm1': 5, 'a1': 5, 'd1': 2, 'u1': 1 },
+    unlockedSkills: [], skillRanks: {}, collection: { 'm1': 5, 'a1': 5, 'd1': 2, 'u1': 1 },
     cardLevels: {}, activeDeck: ['m1', 'm1', 'm1', 'm1', 'a1', 'a1', 'a1', 'a1', 'd1', 'u1']
 };
 
@@ -418,6 +475,10 @@ const DEFAULT_META = {
 const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAfford, scale = 1, inHand = false, level = 1, overrideValue, isDiscardMode = false, isAnimNew = false, isEventNode = false, pixelWidth, pixelHeight, disableInteraction = false }) => {
   const card = overrideCard || CARD_DB[cardId];
   if (!card) return null;
+  const isRapidClickable = inHand && !disableInteraction && (
+      (isDiscardMode && !!onDiscard) ||
+      (!!canAfford && !!onPlay && !isDiscardMode && !isEventNode)
+  );
 
   const displayCost = effectiveCost !== undefined ? effectiveCost : card.cost;
   const costColor = displayCost < card.cost ? "text-cyan-300 drop-shadow-[0_0_5px_rgba(0,255,255,0.8)]" : "text-yellow-300";
@@ -448,6 +509,7 @@ const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAffor
   return (
     <div 
       draggable={inHand}
+      data-rapid-click={isRapidClickable ? 'true' : undefined}
       onDragStart={(e) => {
           if (inHand) {
               e.dataTransfer.setData('text/plain', card.runId);
@@ -1305,6 +1367,7 @@ const CombatTopMap = React.memo(({ runMap, nodeIndex }) => {
 
 export default function App() {
   const [view, setView] = useState('menu');
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [activeTab, setActiveTab] = useState('trunk'); 
   const [sortMethod, setSortMethod] = useState('cost'); 
   const gameFrameRef = useRef(null);
@@ -1344,6 +1407,8 @@ export default function App() {
   const [hoveredFeaturedCardId, setHoveredFeaturedCardId] = useState(null);
   const [hoveredCardId, setHoveredCardId] = useState(null);
   const [lockedCardId, setLockedCardId] = useState(null); 
+  const [hoveredSkillId, setHoveredSkillId] = useState(null);
+  const [selectedSkillId, setSelectedSkillId] = useState(null);
   const [isDiscardMode, setIsDiscardMode] = useState(false);
   
   // Interactive Map State
@@ -1353,6 +1418,7 @@ export default function App() {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDraggingMap, setIsDraggingMap] = useState(false);
   const [dragStartMap, setDragStartMap] = useState({ x: 0, y: 0 });
+  const pinchStateRef = useRef(null);
 
   useEffect(() => {
       if (view === 'skills') {
@@ -1381,6 +1447,13 @@ export default function App() {
   const [hitStopUntil, setHitStopUntil] = useState(0);
   const [pendingDrawEffects, setPendingDrawEffects] = useState([]);
   const [drawAnimations, setDrawAnimations] = useState([]);
+  const getSkillRank = useCallback((skillId) => meta.skillRanks?.[skillId] || (meta.unlockedSkills?.includes(skillId) ? 1 : 0), [meta.skillRanks, meta.unlockedSkills]);
+  const hasSkillUnlocked = useCallback((skillId) => getSkillRank(skillId) > 0, [getSkillRank]);
+  const getSkillCost = useCallback((skill) => {
+      const currentRank = getSkillRank(skill.id);
+      if (skill.nodeType !== 'parameter') return skill.cost;
+      return Math.floor(skill.cost * Math.pow(5, currentRank));
+  }, [getSkillRank]);
   const unlockedFeatureSet = useMemo(() => new Set(meta.unlockedFeatures || []), [meta.unlockedFeatures]);
   const hasFeature = useCallback((featureId) => unlockedFeatureSet.has(featureId), [unlockedFeatureSet]);
   const visibleSkillEntries = useMemo(
@@ -1464,6 +1537,7 @@ export default function App() {
   const deckButtonRef = useRef(null);
   const handCardRefs = useRef(new Map());
   const queuedDrawCardsRef = useRef([]);
+  const rapidClickStateRef = useRef({ timeoutId: null, intervalId: null, point: null, fallbackElement: null });
 
   useLayoutEffect(() => {
       const node = gameFrameRef.current;
@@ -1515,6 +1589,104 @@ export default function App() {
          };
      }
   }, [run]);
+
+  useEffect(() => {
+      const stopRapidClick = () => {
+          const state = rapidClickStateRef.current;
+          if (state.timeoutId) clearTimeout(state.timeoutId);
+          if (state.intervalId) clearInterval(state.intervalId);
+          rapidClickStateRef.current = { timeoutId: null, intervalId: null, point: null, fallbackElement: null };
+      };
+
+      const getRepeatTargetAtPoint = (point) => {
+          if (!point) return null;
+          const elementAtPoint = document.elementFromPoint(point.x, point.y);
+          return elementAtPoint?.closest?.('[data-rapid-click="true"]') || null;
+      };
+
+      const startRapidClick = (target, point = null) => {
+          if (!meta.holdToRepeat) return;
+          if (!target || target.disabled) return;
+          const repeatTarget = target.closest('[data-rapid-click="true"]');
+          if (!repeatTarget || repeatTarget.disabled) return;
+
+          stopRapidClick();
+          const triggerRepeat = () => {
+              const liveTarget = getRepeatTargetAtPoint(rapidClickStateRef.current.point) || rapidClickStateRef.current.fallbackElement;
+              if (!liveTarget || !document.body.contains(liveTarget) || liveTarget.disabled) {
+                  stopRapidClick();
+                  return;
+              }
+              liveTarget.click();
+          };
+
+          const timeoutId = window.setTimeout(() => {
+              triggerRepeat();
+              const intervalId = window.setInterval(triggerRepeat, 280);
+              rapidClickStateRef.current = { timeoutId: null, intervalId, point, fallbackElement: repeatTarget };
+          }, 220);
+
+          rapidClickStateRef.current = { timeoutId, intervalId: null, point, fallbackElement: repeatTarget };
+      };
+
+      const handleMouseDown = (event) => {
+          if (event.button !== 2) return;
+          startRapidClick(event.target, { x: event.clientX, y: event.clientY });
+      };
+
+      const handleMouseMove = (event) => {
+          if (!rapidClickStateRef.current.timeoutId && !rapidClickStateRef.current.intervalId) return;
+          rapidClickStateRef.current = {
+              ...rapidClickStateRef.current,
+              point: { x: event.clientX, y: event.clientY },
+          };
+      };
+
+      const handleContextMenu = (event) => {
+          if (!meta.holdToRepeat) return;
+          const repeatTarget = event.target?.closest?.('[data-rapid-click="true"]');
+          if (!repeatTarget) return;
+          event.preventDefault();
+      };
+
+      const handleTouchStart = (event) => {
+          const touch = event.touches?.[0];
+          startRapidClick(event.target, touch ? { x: touch.clientX, y: touch.clientY } : null);
+      };
+
+      const handleTouchMove = (event) => {
+          const touch = event.touches?.[0];
+          if (!touch) return;
+          if (!rapidClickStateRef.current.timeoutId && !rapidClickStateRef.current.intervalId) return;
+          rapidClickStateRef.current = {
+              ...rapidClickStateRef.current,
+              point: { x: touch.clientX, y: touch.clientY },
+          };
+      };
+
+      document.addEventListener('mousedown', handleMouseDown);
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('contextmenu', handleContextMenu);
+      document.addEventListener('touchstart', handleTouchStart, { passive: true });
+      document.addEventListener('touchmove', handleTouchMove, { passive: true });
+      window.addEventListener('mouseup', stopRapidClick);
+      window.addEventListener('touchend', stopRapidClick);
+      window.addEventListener('touchcancel', stopRapidClick);
+      window.addEventListener('blur', stopRapidClick);
+
+      return () => {
+          document.removeEventListener('mousedown', handleMouseDown);
+          document.removeEventListener('mousemove', handleMouseMove);
+          document.removeEventListener('contextmenu', handleContextMenu);
+          document.removeEventListener('touchstart', handleTouchStart);
+          document.removeEventListener('touchmove', handleTouchMove);
+          window.removeEventListener('mouseup', stopRapidClick);
+          window.removeEventListener('touchend', stopRapidClick);
+          window.removeEventListener('touchcancel', stopRapidClick);
+          window.removeEventListener('blur', stopRapidClick);
+          stopRapidClick();
+      };
+  }, [meta.holdToRepeat]);
 
   useLayoutEffect(() => {
       if (pendingDrawEffects.length === 0) return undefined;
@@ -1782,6 +1954,7 @@ export default function App() {
 
     const freshMap = buildRunMap(dungeonId, meta);
     const firstNode = freshMap[0];
+    const baseRunHp = 50 + (meta.bonusHp || 0);
     
     let initialMonster = null;
     let initialEvent = null;
@@ -1792,7 +1965,7 @@ export default function App() {
     }
 
     setRun({
-      hp: 50, maxHp: 50, shield: 0, mana: meta.startMana, kills: 0, gpEarned: 0, fragsEarned: 0, packsEarned: 0,
+      hp: baseRunHp, maxHp: baseRunHp, shield: 0, mana: meta.startMana, kills: 0, gpEarned: 0, fragsEarned: 0, packsEarned: 0,
       deck, hand, discard: [], monster: initialMonster, isPaused: false, autoDrawTimer: 0, activeEffects: [], enemyAttackEffects: [], floatingDrops: [], deathEffect: null, power: 0,
       runMap: freshMap, nodeIndex: 0, activeEvent: initialEvent, eventPopup: null,
       dungeonId, status: 'active', completionRewards: dungeon.unlocks || null,
@@ -1827,11 +2000,12 @@ export default function App() {
                 for(let i=0; i<7; i++) newDrops.push({ id: Math.random(), type: 'gp', val: null, delay: i*100 });
                 newDrops.push({ id: Math.random(), type: 'gp', val: '+1500 GP', delay: 200, isLabel: true });
             } else if (roll < 0.66) {
-                next.fragsEarned += 25;
+                const fragGain = Math.max(1, Math.floor(25 * (meta.fragGainMult || 1)));
+                next.fragsEarned += fragGain;
                 popupData.text = "You found scattered Fragments!";
-                popupData.loot.push("+25 Fragments");
+                popupData.loot.push(`+${fragGain} Fragments`);
                 for(let i=0; i<7; i++) newDrops.push({ id: Math.random(), type: 'frag', val: null, delay: i*100 });
-                newDrops.push({ id: Math.random(), type: 'frag', val: '+25 Frags', delay: 200, isLabel: true });
+                newDrops.push({ id: Math.random(), type: 'frag', val: `+${fragGain} Frags`, delay: 200, isLabel: true });
             } else {
                 next.packsEarned += 3;
                 popupData.text = "You found intact Data Packs!";
@@ -1912,6 +2086,7 @@ export default function App() {
       let projectedDamage = perHitDamage * totalHits;
       if (meta.firstStrike && run.monster && run.monster.hp === run.monster.maxHp) projectedDamage *= 2;
       if (meta.bossSlayer && run.monster && run.monster.isBoss) projectedDamage = Math.floor(projectedDamage * 1.5);
+      if (run.monster && !run.monster.isBoss) projectedDamage = Math.floor(projectedDamage * (meta.normalEnemyDamageMult || 1));
       setHitStopUntil(Date.now() + getAttackFxProfile(card, projectedDamage).hitStop);
     }
     setRun(prev => {
@@ -1932,6 +2107,7 @@ export default function App() {
         if (meta.heavyDmgMod > 0 && card.cost >= 3) dmg += meta.heavyDmgMod * totalHits;
         if (meta.firstStrike && nextRun.monster && nextRun.monster.hp === nextRun.monster.maxHp) dmg *= 2;
         if (meta.bossSlayer && nextRun.monster && nextRun.monster.isBoss) dmg = Math.floor(dmg * 1.5);
+        if (nextRun.monster && !nextRun.monster.isBoss) dmg = Math.floor(dmg * (meta.normalEnemyDamageMult || 1));
         if (nextRun.monster) {
             nextRun.monster.hp -= dmg;
             nextRun.cardDamage = { ...nextRun.cardDamage };
@@ -1992,10 +2168,14 @@ export default function App() {
       let chainCount = 0;
       while (nextRun.monster && nextRun.monster.hp <= 0) {
         const overkillAmt = meta.overkill ? Math.abs(nextRun.monster.hp) : 0;
-        
-        const gpReward = nextRun.monster.isBoss ? 500 + (nextRun.kills * 50) : 50 + (nextRun.kills * 10);
+
+        const baseGpReward = nextRun.monster.isBoss ? 500 + (nextRun.kills * 50) : 50 + (nextRun.kills * 10);
+        const gpReward = nextRun.monster.isBoss
+            ? Math.floor(baseGpReward * (meta.bossGpMult || 1))
+            : baseGpReward;
         nextRun.gpEarned += gpReward;
-        const fragReward = nextRun.monster.isBoss ? Math.floor(Math.random() * 6) + 5 : Math.floor(Math.random() * 3) + 1;
+        const baseFragReward = nextRun.monster.isBoss ? Math.floor(Math.random() * 6) + 5 : Math.floor(Math.random() * 3) + 1;
+        const fragReward = Math.max(1, Math.floor(baseFragReward * (meta.fragGainMult || 1)));
         nextRun.fragsEarned += fragReward;
 
         let packs = 0;
@@ -2312,6 +2492,30 @@ export default function App() {
       @keyframes slideUp { from { opacity: 0; transform: translateY(50px) scale(var(--tw-scale-x, 1)); } to { opacity: 1; transform: translateY(0) scale(var(--tw-scale-x, 1)); } }
       @keyframes popIn { 0% { transform: scale(0.5); opacity: 0; } 70% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
       @keyframes unlockFlare { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(2.5); opacity: 0; } }
+      @keyframes skill-outline-surge {
+          0% { stroke-dashoffset: 120; opacity: 0.25; filter: brightness(0.9); }
+          20% { opacity: 0.95; filter: brightness(1.45); }
+          100% { stroke-dashoffset: 0; opacity: 0.35; filter: brightness(1.05); }
+      }
+      @keyframes skill-outline-surge-feature {
+          0% { stroke-dashoffset: 160; opacity: 0.18; filter: brightness(0.8); }
+          15% { opacity: 1; filter: brightness(1.65); }
+          45% { opacity: 0.28; filter: brightness(0.95); }
+          100% { stroke-dashoffset: 0; opacity: 0.82; filter: brightness(1.35); }
+      }
+      @keyframes skill-link-flow {
+          0% { stroke-dashoffset: 26; opacity: 0.22; }
+          18% { opacity: 0.95; }
+          100% { stroke-dashoffset: 0; opacity: 0.4; }
+      }
+      @keyframes feature-node-flicker {
+          0% { opacity: 0.22; transform: scale(0.98); filter: brightness(0.85); }
+          18% { opacity: 0.95; transform: scale(1.02); filter: brightness(1.4); }
+          34% { opacity: 0.38; transform: scale(1); filter: brightness(0.95); }
+          54% { opacity: 1; transform: scale(1.04); filter: brightness(1.55); }
+          78% { opacity: 0.45; transform: scale(1.01); filter: brightness(1); }
+          100% { opacity: 0.9; transform: scale(1.03); filter: brightness(1.3); }
+      }
       @keyframes enemy-death {
         0% { opacity: 1; transform: scale(1); filter: brightness(1) saturate(1); }
         16% { opacity: 1; transform: scale(1.1); filter: brightness(2.8) saturate(1.8); }
@@ -2397,10 +2601,10 @@ export default function App() {
   // --- Derived State for Menu Notifications ---
   const canUnlockSkill = useMemo(() => {
     return visibleSkillEntries.some(([, skill]) => {
-        const reqsMet = skill.requiresAny.length === 0 || skill.requiresAny.some(req => meta.unlockedSkills.includes(req));
-        return meta.gp >= skill.cost && reqsMet && !meta.unlockedSkills.includes(skill.id);
+        const reqsMet = skill.requiresAny.length === 0 || skill.requiresAny.some(req => hasSkillUnlocked(req));
+        return meta.gp >= getSkillCost(skill) && reqsMet && getSkillRank(skill.id) < (skill.maxRank || 1);
     });
-  }, [meta.gp, meta.unlockedSkills, visibleSkillEntries]);
+  }, [meta.gp, visibleSkillEntries, hasSkillUnlocked, getSkillRank, getSkillCost]);
 
   const canUpgradeCard = useMemo(() => {
     return Object.keys(CARD_DB).some(id => {
@@ -2433,6 +2637,60 @@ export default function App() {
     }
     setView('dungeons');
   };
+
+  const grantDebugResources = useCallback((delta) => {
+      setMeta((prev) => ({
+          ...prev,
+          gp: Math.max(0, prev.gp + (delta.gp || 0)),
+          fragments: Math.max(0, prev.fragments + (delta.fragments || 0)),
+          packs: Math.max(0, prev.packs + (delta.packs || 0)),
+      }));
+  }, []);
+
+  const toggleStageUnlock = useCallback((stageId) => {
+      setMeta((prev) => {
+          const nextStages = new Set(prev.unlockedStages || [1]);
+          if (stageId === 1) {
+              nextStages.add(1);
+          } else if (nextStages.has(stageId)) {
+              nextStages.delete(stageId);
+          } else {
+              nextStages.add(stageId);
+          }
+          nextStages.add(1);
+          const orderedStages = Array.from(nextStages).sort((a, b) => a - b);
+          return {
+              ...prev,
+              unlockedStages: orderedStages,
+              stage: Math.min(prev.stage || 1, Math.max(...orderedStages)),
+          };
+      });
+  }, []);
+
+  const setCurrentStage = useCallback((stageId) => {
+      setMeta((prev) => {
+          const nextStages = new Set(prev.unlockedStages || [1]);
+          nextStages.add(1);
+          nextStages.add(stageId);
+          return {
+              ...prev,
+              stage: stageId,
+              unlockedStages: Array.from(nextStages).sort((a, b) => a - b),
+          };
+      });
+  }, []);
+
+  const toggleFeatureUnlock = useCallback((featureId) => {
+      setMeta((prev) => {
+          const nextFeatures = new Set(prev.unlockedFeatures || []);
+          if (nextFeatures.has(featureId)) nextFeatures.delete(featureId);
+          else nextFeatures.add(featureId);
+          return {
+              ...prev,
+              unlockedFeatures: Array.from(nextFeatures),
+          };
+      });
+  }, []);
 
   const renderMenu = () => {
     const btnBase = "w-full flex items-center justify-center gap-3 p-4 rounded font-black uppercase tracking-widest transition-all backdrop-blur-sm bg-slate-900 border text-slate-300 shadow-md";
@@ -2569,6 +2827,7 @@ export default function App() {
     const isCombatNode = currentMapNode && (currentMapNode.type === 'encounter' || currentMapNode.type === 'boss');
     const compactCombat = isMobileViewport;
     const handCardScale = compactCombat ? 0.72 : 1;
+    const mobileOverlap = compactCombat && run.hand.length > 0 ? Math.min(32, Math.max(0, (run.hand.length - 4) * 7)) : 0;
     const renderTimestamp = frameNow;
     const isHitStopActive = renderTimestamp < hitStopUntil;
     const manaFx = [];
@@ -2750,7 +3009,7 @@ export default function App() {
            {/* Middle Sprite Area */}
            <div className="absolute top-[50%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-[45]">
                {run.activeEvent && !isCombatNode ? (
-                   <div className="relative group transition-transform duration-100 cursor-pointer hover:scale-110 p-8 -m-8" onClick={triggerEventRewards}>
+                   <div className="relative group transition-transform duration-100 cursor-pointer hover:scale-110 p-8 -m-8" onClick={triggerEventRewards} data-rapid-click="true">
                         <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-48 h-12 bg-yellow-900/40 rounded-[100%] border border-yellow-500/30 shadow-[0_0_30px_rgba(250,204,21,0.2)]" />
                         <div className={`w-44 h-60 rounded-sm bg-gradient-to-br ${
                             run.activeEvent.type === 'treasure' ? 'from-yellow-900 to-black border-yellow-500 shadow-[0_0_50px_rgba(250,204,21,0.4)]' :
@@ -2920,9 +3179,14 @@ export default function App() {
              </span>
           </div>
 
-          <div className={`absolute bottom-2 sm:bottom-8 left-20 right-20 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 flex items-end gap-2 sm:-space-x-4 z-30 transform sm:scale-100 origin-bottom transition-all duration-300 overflow-x-auto sm:overflow-visible px-1 sm:px-0 ${isDiscardMode ? 'bg-red-900/30 p-2 sm:p-8 rounded-xl shadow-[0_0_50px_rgba(255,0,0,0.3)] ring-2 ring-red-500' : ''}`}>
+          <div className={`absolute bottom-2 sm:bottom-8 left-20 right-20 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 flex items-end gap-0 sm:-space-x-4 z-30 transform sm:scale-100 origin-bottom transition-all duration-300 overflow-visible px-1 sm:px-0 ${isDiscardMode ? 'bg-red-900/30 p-2 sm:p-8 rounded-xl shadow-[0_0_50px_rgba(255,0,0,0.3)] ring-2 ring-red-500' : ''}`}>
             {run.hand.map((card) => (
-              <div key={card.runId} ref={(node) => setHandCardRef(card.runId, node)} className="relative shrink-0">
+              <div
+                key={card.runId}
+                ref={(node) => setHandCardRef(card.runId, node)}
+                className="relative shrink-0"
+                style={compactCombat ? { marginLeft: card.runId === run.hand[0]?.runId ? 0 : `-${mobileOverlap}px` } : undefined}
+              >
                 <Card 
                   cardId={card.id}
                   overrideCard={card}
@@ -2952,6 +3216,7 @@ export default function App() {
              <button 
                 ref={deckButtonRef}
                 onClick={drawCard}
+                data-rapid-click="true"
                 className={`relative w-16 h-24 sm:w-28 sm:h-40 bg-[#1a110a] rounded-sm border-[2px] sm:border-[4px] border-[#4a3222] shadow-[5px_5px_20px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(0,0,0,0.8)] flex flex-col items-center justify-center transform hover:-translate-y-2 hover:shadow-[10px_15px_30px_rgba(0,255,255,0.2)] transition-all active:scale-95 overflow-hidden origin-bottom-right sm:origin-center ${hasDrawFx ? 'animate-[draw-deck-pulse_0.34s_ease-out]' : ''}`}
              >
                 {(run.hand.length === 0 || (run.hand.length > 0 && run.hand.length < meta.maxHand && run.hand.every(c => getEffectiveCost(c) > run.mana))) && (
@@ -2980,65 +3245,154 @@ export default function App() {
 
   const renderSkills = () => {
     const buySkill = (skill) => {
-        const reqsMet = skill.requiresAny.length === 0 || skill.requiresAny.some(req => meta.unlockedSkills.includes(req));
-        if (meta.gp >= skill.cost && reqsMet && !meta.unlockedSkills.includes(skill.id)) {
+        const currentRank = getSkillRank(skill.id);
+        const currentCost = getSkillCost(skill);
+        const reqsMet = skill.requiresAny.length === 0 || skill.requiresAny.some(req => hasSkillUnlocked(req));
+        if (meta.gp >= currentCost && reqsMet && currentRank < (skill.maxRank || 1)) {
             setMeta(prev => {
                 const next = skill.effect(prev);
-                return { ...next, gp: prev.gp - skill.cost, unlockedSkills: [...prev.unlockedSkills, skill.id] };
+                const nextRanks = { ...(prev.skillRanks || {}), [skill.id]: currentRank + 1 };
+                const nextUnlocked = prev.unlockedSkills.includes(skill.id) ? prev.unlockedSkills : [...prev.unlockedSkills, skill.id];
+                return { ...next, gp: prev.gp - currentCost, skillRanks: nextRanks, unlockedSkills: nextUnlocked };
             });
             setUnlockAnimId(skill.id);
             setTimeout(() => setUnlockAnimId(null), 500);
         }
     };
 
+    const activateSkillNode = (skill, currentRank, reqsMet) => {
+        setSelectedSkillId(skill.id);
+        if (isMobileViewport && selectedSkillId !== skill.id) return;
+        if (currentRank < (skill.maxRank || 1) && reqsMet) buySkill(skill);
+    };
+
     const renderNode = (skillKey) => {
         const skill = SKILL_TREE_DICT[skillKey];
         if (!skill || !visibleSkillIds.has(skillKey)) return null;
-        const isUnlocked = meta.unlockedSkills.includes(skill.id);
-        const reqsMet = skill.requiresAny.length === 0 || skill.requiresAny.some(req => meta.unlockedSkills.includes(req));
-        const canAfford = meta.gp >= skill.cost && reqsMet;
+        const currentRank = getSkillRank(skill.id);
+        const isUnlocked = currentRank > 0;
+        const isMaxRank = currentRank >= (skill.maxRank || 1);
+        const currentCost = getSkillCost(skill);
+        const reqsMet = skill.requiresAny.length === 0 || skill.requiresAny.some(req => hasSkillUnlocked(req));
+        const canAfford = meta.gp >= currentCost && reqsMet && !isMaxRank;
+        const isFocused = hoveredSkillId === skill.id || selectedSkillId === skill.id;
         const Icon = skill.icon;
         
         let colorTheme = BRANCH_COLORS[skill.branch] || BRANCH_COLORS.core;
-
-        let stateClass = "bg-black border-slate-800 text-slate-500 opacity-70 grayscale"; 
-        if (isUnlocked) stateClass = `${colorTheme.bg} ${colorTheme.border} text-white ${colorTheme.shadow} z-20 border-2`;
-        else if (canAfford) stateClass = `bg-slate-900 border-slate-400 text-white shadow-[0_0_15px_rgba(255,255,255,0.2)] hover:bg-slate-800 cursor-pointer z-20 hover:shadow-[0_0_20px_rgba(255,255,255,0.5)] border-2 grayscale hover:grayscale-0 transition-all duration-300`;
-        else if (reqsMet && !canAfford) stateClass = "bg-slate-900 border-slate-700 text-slate-400 z-20 border-2 grayscale";
-
+        const shapeClass = skill.nodeType === 'parameter' ? 'rounded-full' : 'rotate-45';
+        const outlineSvgClass = skill.nodeType === 'parameter' ? 'rounded-full' : 'rotate-45';
+        const surgeAnimation = skill.nodeType === 'parameter'
+            ? 'skill-outline-surge 1.9s linear infinite'
+            : 'skill-outline-surge-feature 1.2s linear infinite';
+        let stateClass = "bg-black border-slate-800 text-slate-500 opacity-75 grayscale"; 
+        if (isUnlocked) stateClass = `${colorTheme.bg} ${colorTheme.border} text-white ${colorTheme.shadow} border-2`;
+        else if (canAfford) stateClass = `bg-slate-900 border-slate-400 text-white shadow-[0_0_18px_rgba(255,255,255,0.22)] hover:bg-slate-800 cursor-pointer hover:shadow-[0_0_24px_rgba(255,255,255,0.45)] border-2 grayscale hover:grayscale-0 transition-all duration-300`;
+        else if (reqsMet && !canAfford) stateClass = "bg-slate-900 border-slate-700 text-slate-400 border-2 grayscale";
         return (
             <div 
                 key={skillKey} 
-                onClick={() => !isUnlocked && reqsMet && buySkill(skill)} 
-                className={`w-48 sm:w-56 p-3 rounded-sm transition-all flex flex-col absolute transform -translate-x-1/2 -translate-y-1/2 ${stateClass} font-tech`} 
+                onClick={(e) => {
+                    e.stopPropagation();
+                    activateSkillNode(skill, currentRank, reqsMet);
+                }}
+                onMouseEnter={() => {
+                    setHoveredSkillId(skill.id);
+                    setSelectedSkillId((current) => current === skill.id ? current : null);
+                }}
+                onMouseLeave={() => setHoveredSkillId((current) => current === skill.id ? null : current)}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                data-rapid-click={canAfford ? 'true' : undefined}
+                className={`absolute -translate-x-1/2 -translate-y-1/2 font-tech ${isFocused ? 'z-[140]' : 'z-20'}`}
                 style={{ left: `${NODE_POS[skillKey].x}%`, top: `${NODE_POS[skillKey].y}%` }}
             >
-                {unlockAnimId === skill.id && <div className="absolute inset-0 rounded-sm bg-white mix-blend-screen animate-[unlockFlare_0.5s_ease-out] z-0 pointer-events-none" />}
-                <div className="flex justify-between items-start mb-2 relative z-10">
-                    <div className="flex items-center gap-2">
-                        <Icon size={18} className={isUnlocked ? colorTheme.text : (canAfford ? 'text-white' : 'text-slate-500')} />
-                        <h3 className={`text-[10px] sm:text-xs font-black uppercase tracking-tight leading-tight ${canAfford && !isUnlocked ? 'text-white drop-shadow-[0_0_5px_currentColor]' : ''}`}>{skill.name}</h3>
-                    </div>
-                </div>
-                <div className="flex justify-between items-end relative z-10">
-                    <p className="text-[9px] sm:text-[10px] opacity-80 leading-tight font-read max-w-[110px] sm:max-w-[130px]">{skill.desc}</p>
-                    {isUnlocked ? (
-                        <div className="text-[10px] font-black uppercase tracking-widest text-white opacity-50">Active</div>
-                    ) : (
-                        <div className="flex flex-col items-end">
-                            <span className={`text-[10px] sm:text-[11px] font-black ${canAfford ? colorTheme.text : 'text-slate-500'}`}>{skill.cost} GP</span>
-                        </div>
+                <div className={`group relative flex h-14 w-14 sm:h-[4.5rem] sm:w-[4.5rem] items-center justify-center border-2 bg-slate-950 shadow-[0_0_0_3px_rgba(2,6,23,0.98)] transition-all duration-200 ${shapeClass} ${stateClass} ${isFocused ? 'scale-110' : 'hover:scale-105'}`}>
+                    {canAfford && (
+                        <>
+                            <div className={`absolute inset-[-10px] ${outlineSvgClass} pointer-events-none`}>
+                                <svg viewBox="0 0 100 100" className="h-full w-full overflow-visible">
+                                    {skill.nodeType === 'parameter' ? (
+                                        <>
+                                            <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="3" className={`${colorTheme.text} opacity-15`} />
+                                            <circle
+                                                cx="50"
+                                                cy="50"
+                                                r="45"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="3"
+                                                strokeLinecap="round"
+                                                strokeDasharray="36 84"
+                                                className={colorTheme.text}
+                                                style={{ animation: surgeAnimation }}
+                                            />
+                                        </>
+                                    ) : (
+                                        <>
+                                            <rect x="18" y="18" width="64" height="64" rx="0" fill="none" stroke="currentColor" strokeWidth="3" className={`${colorTheme.text} opacity-15`} />
+                                            <rect
+                                                x="18"
+                                                y="18"
+                                                width="64"
+                                                height="64"
+                                                rx="0"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="3"
+                                                strokeLinecap="round"
+                                                strokeDasharray="26 86"
+                                                className={colorTheme.text}
+                                                style={{ animation: surgeAnimation }}
+                                            />
+                                        </>
+                                    )}
+                                </svg>
+                            </div>
+                            <div className={`absolute inset-[-12px] ${shapeClass} bg-current opacity-10 blur-md ${colorTheme.text} pointer-events-none`} />
+                        </>
                     )}
+                    <div className={`absolute inset-0 opacity-70 ${shapeClass} bg-[linear-gradient(135deg,rgba(255,255,255,0.14),transparent_42%,rgba(255,255,255,0.05)_65%,transparent)]`} />
+                    <div className={`absolute inset-[3px] border ${shapeClass} ${isUnlocked ? 'border-white/25' : 'border-slate-700/70'}`} />
+                    {canAfford && !isUnlocked && <div className={`absolute inset-[-4px] ${shapeClass} border border-white/15 animate-[pulse_2.2s_ease-in-out_infinite]`} />}
+                    {unlockAnimId === skill.id && <div className={`absolute inset-0 bg-white mix-blend-screen animate-[unlockFlare_0.5s_ease-out] z-0 pointer-events-none ${shapeClass}`} />}
+                    <Icon size={30} className={`relative z-10 ${skill.nodeType === 'feature' ? '-rotate-45 scale-[1.22]' : 'scale-[1.2]'} ${isUnlocked ? colorTheme.text : (canAfford ? 'text-white' : 'text-slate-500')}`} />
                 </div>
+                {skill.nodeType === 'parameter' && (
+                    <div className="absolute left-1/2 top-full mt-2 flex -translate-x-1/2 items-center gap-1.5">
+                        {Array.from({ length: skill.maxRank || 1 }, (_, idx) => (
+                            <div key={`${skill.id}-rank-${idx}`} className={`h-2 w-2 rounded-full border ${idx < currentRank ? 'border-cyan-300 bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.8)]' : 'border-slate-700 bg-slate-950'}`} />
+                        ))}
+                    </div>
+                )}
+                {isFocused && (
+                    <div className={`absolute left-1/2 top-full z-[160] mt-5 w-64 sm:w-72 -translate-x-1/2 overflow-hidden rounded-none border-2 bg-black/97 px-4 py-4 shadow-[0_0_32px_rgba(0,0,0,0.9)] backdrop-blur-md ${colorTheme.border} ${colorTheme.shadow}`}>
+                        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.09),transparent_35%,rgba(255,255,255,0.03)_55%,transparent)] pointer-events-none" />
+                        <div className="absolute inset-x-0 top-0 h-px bg-white/30 pointer-events-none" />
+                        <div className="absolute inset-y-0 left-0 w-[3px] bg-current opacity-80 pointer-events-none" />
+                        <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${skill.branch === 'core' ? 'bg-cyan-400' : skill.branch === 'sys' ? 'bg-blue-400' : skill.branch === 'flow' ? 'bg-emerald-400' : skill.branch === 'dmg' ? 'bg-red-400' : skill.branch === 'util' ? 'bg-purple-400' : 'bg-amber-400'}`} />
+                        <div className="relative text-base sm:text-lg font-black uppercase tracking-[0.08em] text-white">{skill.name}</div>
+                        <div className="relative mt-2 text-[14px] sm:text-[15px] leading-snug text-slate-100 font-read">{skill.desc}</div>
+                        <div className="relative mt-3 flex items-center justify-between gap-3 text-[12px] sm:text-[13px] font-black uppercase tracking-[0.12em]">
+                            <span className="text-yellow-300">{isMaxRank ? 'Maxed' : `${currentCost} GP`}</span>
+                            <span className={isUnlocked ? colorTheme.text : 'text-slate-400'}>
+                                {skill.nodeType === 'parameter' ? `Rank ${currentRank}/${skill.maxRank || 1}` : (isUnlocked ? 'Active' : 'Feature')}
+                            </span>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     };
 
     const lines = [];
-    visibleSkillEntries.forEach(([, skill]) => {
-        (skill.requiresAny || []).forEach(req => {
-            if (visibleSkillIds.has(req)) lines.push({ from: req, to: skill.id });
-        });
+    visibleSkillEntries.forEach(([skillId, skill]) => {
+        const visualParent = VISUAL_PARENT_MAP[skillId];
+        if (visualParent && visibleSkillIds.has(visualParent) && NODE_POS[visualParent] && NODE_POS[skillId]) {
+            lines.push({ from: visualParent, to: skill.id });
+            return;
+        }
+        const fallbackReq = (skill.requiresAny || []).find((req) => visibleSkillIds.has(req) && NODE_POS[req] && NODE_POS[skillId]);
+        if (fallbackReq) lines.push({ from: fallbackReq, to: skill.id });
     });
 
     const handleWheelMap = (e) => {
@@ -3059,6 +3413,22 @@ export default function App() {
     const handleMouseUp = () => setIsDraggingMap(false);
 
     const handleTouchStart = (e) => {
+        if (e.touches.length === 2) {
+            const [touchA, touchB] = e.touches;
+            const centerX = (touchA.clientX + touchB.clientX) / 2;
+            const centerY = (touchA.clientY + touchB.clientY) / 2;
+            const distance = Math.hypot(touchB.clientX - touchA.clientX, touchB.clientY - touchA.clientY);
+            pinchStateRef.current = {
+                startDistance: distance,
+                startZoom: zoom,
+                startPan: pan,
+                centerX,
+                centerY,
+            };
+            setIsDraggingMap(false);
+            return;
+        }
+        pinchStateRef.current = null;
         if (e.touches.length === 1) {
             setIsDraggingMap(true);
             setDragStartMap({ x: e.touches[0].clientX - pan.x, y: e.touches[0].clientY - pan.y });
@@ -3066,12 +3436,32 @@ export default function App() {
     };
     
     const handleTouchMove = (e) => {
+        if (e.touches.length === 2 && pinchStateRef.current) {
+            e.preventDefault();
+            const [touchA, touchB] = e.touches;
+            const centerX = (touchA.clientX + touchB.clientX) / 2;
+            const centerY = (touchA.clientY + touchB.clientY) / 2;
+            const distance = Math.hypot(touchB.clientX - touchA.clientX, touchB.clientY - touchA.clientY);
+            const nextZoom = Math.max(0.3, Math.min((pinchStateRef.current.startZoom * distance) / pinchStateRef.current.startDistance, 2.2));
+            const zoomRatio = nextZoom / pinchStateRef.current.startZoom;
+            setZoom(nextZoom);
+            setPan({
+                x: centerX - (centerX - pinchStateRef.current.startPan.x) * zoomRatio,
+                y: centerY - (centerY - pinchStateRef.current.startPan.y) * zoomRatio,
+            });
+            return;
+        }
         if (!isDraggingMap) return;
         setPan({ x: e.touches[0].clientX - dragStartMap.x, y: e.touches[0].clientY - dragStartMap.y });
     };
 
+    const handleTouchEnd = () => {
+        setIsDraggingMap(false);
+        pinchStateRef.current = null;
+    };
+
     return (
-        <div className="flex flex-col h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-blue-950 to-black text-white relative font-tech overflow-hidden">
+        <div className="flex flex-col h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-blue-950 to-black text-white relative font-tech overflow-hidden" onClick={() => setSelectedSkillId(null)}>
             <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.03)_1px,transparent_1px)] bg-[size:3rem_3rem] pointer-events-none z-0" />
             
             <div className="flex justify-between items-center p-4 sm:p-6 relative z-40 shrink-0 border-b border-cyan-900/50 bg-black/50 backdrop-blur-md">
@@ -3096,7 +3486,7 @@ export default function App() {
                 onMouseLeave={handleMouseUp}
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
-                onTouchEnd={handleMouseUp}
+                onTouchEnd={handleTouchEnd}
             >
                 <div 
                     className="absolute w-[1600px] h-[1600px] origin-top-left"
@@ -3106,16 +3496,34 @@ export default function App() {
                         {lines.map(({from, to}) => {
                             const n1 = NODE_POS[from];
                             const n2 = NODE_POS[to];
-                            const isUnlocked = meta.unlockedSkills.includes(to);
-                            const isPathActive = meta.unlockedSkills.includes(from) || isUnlocked;
+                            const targetSkill = SKILL_TREE_DICT[to];
+                            const targetReqsMet = targetSkill.requiresAny.length === 0 || targetSkill.requiresAny.some(req => hasSkillUnlocked(req));
+                            const targetCanAfford = meta.gp >= getSkillCost(targetSkill) && targetReqsMet && getSkillRank(targetSkill.id) < (targetSkill.maxRank || 1);
+                            const isUnlocked = hasSkillUnlocked(to);
+                            const isPathActive = hasSkillUnlocked(from) || isUnlocked;
+                            const isFeatureLink = targetSkill.nodeType === 'feature';
                             return (
-                                <line 
-                                    key={`${from}-${to}`}
-                                    x1={`${n1.x}%`} y1={`${n1.y}%`} 
-                                    x2={`${n2.x}%`} y2={`${n2.y}%`} 
-                                    stroke={isUnlocked ? '#06b6d4' : isPathActive ? '#0891b2' : '#1e293b'} 
-                                    strokeWidth={isUnlocked ? 4 : 2} 
-                                />
+                                <g key={`${from}-${to}`}>
+                                    <line 
+                                        x1={`${n1.x}%`} y1={`${n1.y}%`} 
+                                        x2={`${n2.x}%`} y2={`${n2.y}%`} 
+                                        stroke={isUnlocked ? '#06b6d4' : isPathActive ? '#0891b2' : '#1e293b'} 
+                                        strokeWidth={isUnlocked ? 4 : 2} 
+                                        opacity={isPathActive ? 1 : 0.85}
+                                    />
+                                    {targetCanAfford && (
+                                        <line
+                                            x1={`${n1.x}%`} y1={`${n1.y}%`}
+                                            x2={`${n2.x}%`} y2={`${n2.y}%`}
+                                            stroke={isFeatureLink ? '#ffffff' : '#67e8f9'}
+                                            strokeWidth={isFeatureLink ? 2.4 : 2}
+                                            strokeLinecap="round"
+                                            strokeDasharray={isFeatureLink ? '16 20' : '12 18'}
+                                            opacity={isFeatureLink ? 0.95 : 0.8}
+                                            style={{ animation: `skill-link-flow ${isFeatureLink ? '1.15s' : '1.8s'} linear infinite` }}
+                                        />
+                                    )}
+                                </g>
                             );
                         })}
                     </svg>
@@ -3123,7 +3531,7 @@ export default function App() {
                 </div>
             </div>
             
-            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-black/80 px-4 py-2 rounded-full border border-slate-700 text-slate-400 text-xs font-black tracking-widest z-40 pointer-events-none backdrop-blur-md">
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-black/80 px-4 py-2 rounded-full border border-slate-700 text-slate-300 text-sm font-black tracking-[0.18em] z-40 pointer-events-none backdrop-blur-md">
                 Drag to Pan • Scroll to Zoom
             </div>
         </div>
@@ -3386,6 +3794,7 @@ export default function App() {
                                     <button 
                                         onClick={(e) => { e.stopPropagation(); upgradeCard(activeDisplayId); }}
                                         disabled={!canUpgrade}
+                                        data-rapid-click={canUpgrade ? 'true' : undefined}
                                         className={`mt-4 w-full py-3 font-black uppercase tracking-widest rounded transition-all border flex items-center justify-center gap-2
                                             ${canUpgrade ? 'bg-green-900/40 text-green-400 border-green-500 hover:bg-green-600 hover:text-white hover:shadow-[0_0_20px_rgba(34,197,94,0.6)]' : 'bg-black text-slate-600 border-slate-800 cursor-not-allowed'}
                                         `}
@@ -3654,7 +4063,7 @@ export default function App() {
                       const featuredCards = activeBanner ? activeBanner.featuredCards : ['m3', 'u3', 'a7'];
 
                       return (
-                          <div className={`relative overflow-hidden rounded-[1.75rem] border bg-slate-950/80 backdrop-blur-md h-[44rem] ${accentClasses.border} ${accentClasses.glow}`}>
+                          <div className={`relative overflow-hidden rounded-[1.75rem] border bg-slate-950/80 backdrop-blur-md min-h-[48rem] lg:h-[44rem] ${accentClasses.border} ${accentClasses.glow}`}>
                               <div className={`absolute inset-0 ${accentClasses.haze}`} />
                               <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.03),transparent_35%,rgba(255,255,255,0.04)_62%,transparent_78%)]" />
                               <div className="relative flex flex-col lg:flex-row h-full">
@@ -3683,7 +4092,7 @@ export default function App() {
                                       </div>
                                   </div>
 
-                                  <div className="flex-1 grid lg:grid-cols-[20rem_minmax(0,1fr)]">
+                                  <div className="flex-1 grid lg:grid-cols-[20rem_minmax(0,1fr)] min-h-0">
                                       <div className={`relative bg-gradient-to-b ${accentClasses.panel} text-slate-950 p-5 sm:p-7 lg:p-8 h-full`}>
                                           <div className="absolute inset-y-0 right-0 w-px bg-black/10" />
                                           <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] ${accentClasses.chip}`}>
@@ -3716,9 +4125,9 @@ export default function App() {
                                           </div>
                                       </div>
 
-                                      <div className="relative p-5 sm:p-7 lg:p-8 flex flex-col justify-between h-full min-h-0">
+                                      <div className="relative p-4 pb-6 sm:p-7 lg:p-8 flex flex-col justify-between h-full min-h-0">
                                           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),transparent_28%,rgba(255,255,255,0.03)_100%)]" />
-                                          <div className="relative flex-1 flex items-center justify-center">
+                                          <div className="relative flex-1 flex items-center justify-center min-h-[16rem] sm:min-h-[20rem] lg:min-h-0">
                                               <div className="absolute inset-x-[8%] bottom-[8%] h-16 rounded-[999px] bg-white/8 blur-2xl" />
                                               <div className={`absolute left-[16%] top-[14%] text-[11rem] sm:text-[14rem] font-black leading-none opacity-[0.06] ${accentClasses.title}`}>
                                                   01
@@ -3726,7 +4135,7 @@ export default function App() {
                                               <div className="relative z-10 flex flex-col items-center justify-center">
                                                   <div className={`absolute inset-0 blur-3xl opacity-60 ${accentKey === 'emerald' ? 'bg-emerald-400/20' : accentKey === 'amber' ? 'bg-amber-400/20' : accentKey === 'violet' ? 'bg-violet-400/20' : 'bg-cyan-400/20'}`} />
                                                   {activeGachaTab.kind === 'banner' ? (
-                                                      <div className="relative flex gap-2 sm:gap-4 items-end justify-center">
+                                                      <div className="relative flex gap-1.5 sm:gap-4 items-end justify-center px-2 sm:px-0">
                                                           {featuredCards.map((cardId, idx) => (
                                                               (() => {
                                                                   const isSelected = selectedFeaturedCardId
@@ -3788,17 +4197,18 @@ export default function App() {
                                               </div>
                                           </div>
 
-                                          <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
-                                              <div className="text-xs sm:text-sm uppercase tracking-[0.24em] text-slate-500">
+                                          <div className="relative z-10 mt-6 flex flex-col gap-4 rounded-[1.35rem] border border-white/10 bg-black/20 px-3 py-4 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
+                                              <div className="text-center sm:text-left text-xs sm:text-sm uppercase tracking-[0.24em] text-slate-500">
                                                   {activeGachaTab.kind === 'banner' ? `${meta.packs} pulls available` : `${meta.fragments} fragments available`}
                                               </div>
-                                              <div className="flex items-center gap-3">
+                                              <div className="flex flex-wrap items-center justify-center sm:justify-end gap-3">
                                                   {activeGachaTab.kind === 'banner' ? (
                                                       <>
                                                           <button
                                                               onClick={() => openPack(activeBanner.id, 1)}
                                                               disabled={meta.packs < 1}
-                                                              className={`px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.packs >= 1 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
+                                                              data-rapid-click={meta.packs >= 1 ? 'true' : undefined}
+                                                              className={`min-w-[9.25rem] px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.packs >= 1 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
                                                           >
                                                               Pull x1
                                                           </button>
@@ -3806,7 +4216,8 @@ export default function App() {
                                                               <button
                                                                   onClick={() => openPack(activeBanner.id, 5)}
                                                                   disabled={meta.packs < 5}
-                                                                  className={`px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.packs >= 5 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
+                                                                  data-rapid-click={meta.packs >= 5 ? 'true' : undefined}
+                                                                  className={`min-w-[9.25rem] px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.packs >= 5 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
                                                               >
                                                                   Pull x5
                                                               </button>
@@ -3815,7 +4226,8 @@ export default function App() {
                                                               <button
                                                                   onClick={() => openPack(activeBanner.id, 10)}
                                                                   disabled={meta.packs < 10}
-                                                                  className={`px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.packs >= 10 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
+                                                                  data-rapid-click={meta.packs >= 10 ? 'true' : undefined}
+                                                                  className={`min-w-[9.25rem] px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.packs >= 10 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
                                                               >
                                                                   Pull x10
                                                               </button>
@@ -3825,7 +4237,8 @@ export default function App() {
                                                       <button
                                                           onClick={convertFragments}
                                                           disabled={meta.fragments < 10}
-                                                          className={`px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.fragments >= 10 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
+                                                          data-rapid-click={meta.fragments >= 10 ? 'true' : undefined}
+                                                          className={`min-w-[9.25rem] px-5 sm:px-6 py-3 rounded-full border text-sm font-black uppercase tracking-[0.16em] transition-all ${meta.fragments >= 10 ? accentClasses.button : 'bg-black/40 text-slate-600 border-slate-800 cursor-not-allowed'}`}
                                                       >
                                                           Synthesize Pack
                                                       </button>
@@ -3972,6 +4385,109 @@ export default function App() {
         {view === 'codex' && renderCodex()}
         {view === 'gacha' && renderGacha()}
         {view === 'gameover' && renderGameOver()}
+        <div className="absolute right-3 bottom-3 z-[220] flex flex-col items-end gap-2">
+          <button
+            onClick={() => setShowDebugPanel((prev) => !prev)}
+            className="pointer-events-auto flex items-center gap-2 rounded-full border border-red-500/60 bg-black/85 px-3 py-2 text-[10px] sm:text-xs font-black uppercase tracking-[0.22em] text-red-300 shadow-[0_0_18px_rgba(239,68,68,0.35)] backdrop-blur-sm hover:border-red-300 hover:text-white"
+          >
+            <Bug size={14} />
+            Debug
+          </button>
+        </div>
+        {showDebugPanel && (
+          <div className="absolute inset-0 z-[215] bg-black/72 backdrop-blur-[2px] flex items-end sm:items-center justify-center p-3 sm:p-6">
+            <div className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl border border-red-500/40 bg-slate-950/95 shadow-[0_0_40px_rgba(239,68,68,0.22)]">
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-red-500/20 bg-slate-950/95 px-4 py-3 sm:px-6">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.3em] text-red-400 font-black">Debug Console</div>
+                  <div className="text-sm sm:text-lg font-black text-white">Meta progression and resource controls</div>
+                </div>
+                <button
+                  onClick={() => setShowDebugPanel(false)}
+                  className="rounded-full border border-slate-700 bg-black/60 px-3 py-2 text-xs font-black uppercase tracking-[0.22em] text-slate-300 hover:border-red-400 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="grid gap-5 p-4 sm:grid-cols-2 sm:p-6">
+                <div className="rounded-xl border border-slate-800 bg-black/40 p-4">
+                  <div className="text-[10px] uppercase tracking-[0.28em] text-slate-500 font-black">Resources</div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button onClick={() => grantDebugResources({ gp: 1000 })} className="rounded-full border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-yellow-300 hover:border-yellow-300">+1000 GP</button>
+                    <button onClick={() => grantDebugResources({ fragments: 100 })} className="rounded-full border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-purple-300 hover:border-purple-300">+100 Frags</button>
+                    <button onClick={() => grantDebugResources({ packs: 10 })} className="rounded-full border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-cyan-300 hover:border-cyan-300">+10 Packs</button>
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs font-black">
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-3 text-yellow-300">{meta.gp} GP</div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-3 text-purple-300">{meta.fragments} Frags</div>
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-3 text-cyan-300">{meta.packs} Packs</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-800 bg-black/40 p-4">
+                  <div className="text-[10px] uppercase tracking-[0.28em] text-slate-500 font-black">Stages</div>
+                  <div className="mt-4 space-y-2">
+                    {ALL_STAGE_IDS.map((stageId) => {
+                      const stageDef = STAGE_DEFS[stageId];
+                      const isUnlocked = (meta.unlockedStages || []).includes(stageId);
+                      const isCurrent = (meta.stage || 1) === stageId;
+                      return (
+                        <div key={`debug-stage-${stageId}`} className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-3">
+                          <div>
+                            <div className="text-sm font-black text-white">{stageDef.name}</div>
+                            <div className="text-[10px] uppercase tracking-[0.22em] text-slate-500">{stageDef.era}</div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => toggleStageUnlock(stageId)}
+                              className={`rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] ${isUnlocked ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 bg-black/40 text-slate-400'}`}
+                            >
+                              {isUnlocked ? 'Unlocked' : 'Locked'}
+                            </button>
+                            <button
+                              onClick={() => setCurrentStage(stageId)}
+                              className={`rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] ${isCurrent ? 'border-cyan-400 bg-cyan-500/15 text-cyan-200' : 'border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:border-cyan-300'}`}
+                            >
+                              {isCurrent ? 'Current' : 'Set Current'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-800 bg-black/40 p-4 sm:col-span-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[10px] uppercase tracking-[0.28em] text-slate-500 font-black">Unlock Room Rewards</div>
+                    <button
+                      onClick={() => setMeta((prev) => ({ ...prev, unlockedFeatures: [] }))}
+                      className="rounded-full border border-slate-700 bg-black/40 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-300 hover:border-red-400 hover:text-white"
+                    >
+                      Clear Features
+                    </button>
+                  </div>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    {ALL_FEATURE_IDS.map((featureId) => {
+                      const isUnlocked = (meta.unlockedFeatures || []).includes(featureId);
+                      return (
+                        <button
+                          key={`debug-feature-${featureId}`}
+                          onClick={() => toggleFeatureUnlock(featureId)}
+                          className={`flex items-center justify-between rounded-lg border px-3 py-3 text-left transition-colors ${isUnlocked ? 'border-amber-400/40 bg-amber-500/10 text-amber-100' : 'border-slate-800 bg-slate-900/70 text-slate-400 hover:border-slate-600'}`}
+                        >
+                          <span className="text-xs font-black uppercase tracking-[0.18em]">{FEATURE_LABELS[featureId]}</span>
+                          <span className={`text-[10px] font-black uppercase tracking-[0.16em] ${isUnlocked ? 'text-amber-300' : 'text-slate-500'}`}>{isUnlocked ? 'On' : 'Off'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="absolute inset-0 pointer-events-none z-[200] overflow-hidden">
         {activeDeathEffect && deathMonsterIconType ? (
           <div
