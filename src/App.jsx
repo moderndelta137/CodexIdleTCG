@@ -2832,8 +2832,15 @@ export default function App() {
         ? Math.max(0.52, 0.74 - Math.max(0, mobileHandCount - 5) * 0.028)
         : 1;
     const mobileHandLaneWidth = compactCombat ? Math.max(132, viewportWidth - 176) : 0;
-    const mobileHandSpread = compactCombat && mobileHandCount > 1
-        ? Math.min(mobileHandLaneWidth - 72, Math.max(76, (mobileHandCount - 1) * 28))
+    const mobileCardWidth = compactCombat ? 128 * handCardScale : 0;
+    const mobileHandOverlap = compactCombat && mobileHandCount > 1
+        ? Math.max(
+            0,
+            Math.min(
+                mobileCardWidth - 28,
+                ((mobileCardWidth * mobileHandCount) - mobileHandLaneWidth) / (mobileHandCount - 1)
+            )
+        )
         : 0;
     const renderTimestamp = frameNow;
     const isHitStopActive = renderTimestamp < hitStopUntil;
@@ -3191,10 +3198,10 @@ export default function App() {
               <div
                 key={card.runId}
                 ref={(node) => setHandCardRef(card.runId, node)}
-                className={`relative shrink-0 ${compactCombat ? 'absolute left-1/2 bottom-0' : ''}`}
+                className="relative shrink-0"
                 style={compactCombat ? {
-                    transform: `translateX(calc(-50% + ${mobileHandCount <= 1 ? 0 : ((idx / (mobileHandCount - 1)) - 0.5) * mobileHandSpread}px)) translateY(${Math.abs(((idx / Math.max(1, mobileHandCount - 1)) - 0.5) * 12)}px) rotate(${mobileHandCount <= 1 ? 0 : (((idx / (mobileHandCount - 1)) - 0.5) * 6)}deg)`,
-                    zIndex: 20 + idx,
+                    marginLeft: idx === 0 ? 0 : `-${mobileHandOverlap}px`,
+                    zIndex: idx + 1,
                 } : undefined}
               >
                 <Card 
