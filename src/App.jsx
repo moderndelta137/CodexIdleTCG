@@ -2826,8 +2826,15 @@ export default function App() {
     const currentMapNode = run.runMap[run.nodeIndex];
     const isCombatNode = currentMapNode && (currentMapNode.type === 'encounter' || currentMapNode.type === 'boss');
     const compactCombat = isMobileViewport;
-    const handCardScale = compactCombat ? 0.72 : 1;
-    const mobileOverlap = compactCombat && run.hand.length > 0 ? Math.min(32, Math.max(0, (run.hand.length - 4) * 7)) : 0;
+    const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 390;
+    const mobileHandCount = run.hand.length;
+    const handCardScale = compactCombat
+        ? Math.max(0.52, 0.74 - Math.max(0, mobileHandCount - 5) * 0.028)
+        : 1;
+    const mobileHandLaneWidth = compactCombat ? Math.max(132, viewportWidth - 176) : 0;
+    const mobileHandSpread = compactCombat && mobileHandCount > 1
+        ? Math.min(mobileHandLaneWidth - 72, Math.max(76, (mobileHandCount - 1) * 28))
+        : 0;
     const renderTimestamp = frameNow;
     const isHitStopActive = renderTimestamp < hitStopUntil;
     const manaFx = [];
@@ -3179,13 +3186,16 @@ export default function App() {
              </span>
           </div>
 
-          <div className={`absolute bottom-2 sm:bottom-8 left-20 right-20 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 flex items-end gap-0 sm:-space-x-4 z-30 transform sm:scale-100 origin-bottom transition-all duration-300 overflow-visible px-1 sm:px-0 ${isDiscardMode ? 'bg-red-900/30 p-2 sm:p-8 rounded-xl shadow-[0_0_50px_rgba(255,0,0,0.3)] ring-2 ring-red-500' : ''}`}>
-            {run.hand.map((card) => (
+          <div className={`absolute bottom-2 sm:bottom-8 left-20 right-20 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 flex items-end gap-0 sm:-space-x-4 z-30 transform sm:scale-100 origin-bottom transition-all duration-300 overflow-visible px-1 sm:px-0 ${compactCombat ? 'justify-center min-h-[9rem]' : ''} ${isDiscardMode ? 'bg-red-900/30 p-2 sm:p-8 rounded-xl shadow-[0_0_50px_rgba(255,0,0,0.3)] ring-2 ring-red-500' : ''}`}>
+            {run.hand.map((card, idx) => (
               <div
                 key={card.runId}
                 ref={(node) => setHandCardRef(card.runId, node)}
-                className="relative shrink-0"
-                style={compactCombat ? { marginLeft: card.runId === run.hand[0]?.runId ? 0 : `-${mobileOverlap}px` } : undefined}
+                className={`relative shrink-0 ${compactCombat ? 'absolute left-1/2 bottom-0' : ''}`}
+                style={compactCombat ? {
+                    transform: `translateX(calc(-50% + ${mobileHandCount <= 1 ? 0 : ((idx / (mobileHandCount - 1)) - 0.5) * mobileHandSpread}px)) translateY(${Math.abs(((idx / Math.max(1, mobileHandCount - 1)) - 0.5) * 12)}px) rotate(${mobileHandCount <= 1 ? 0 : (((idx / (mobileHandCount - 1)) - 0.5) * 6)}deg)`,
+                    zIndex: 20 + idx,
+                } : undefined}
               >
                 <Card 
                   cardId={card.id}
