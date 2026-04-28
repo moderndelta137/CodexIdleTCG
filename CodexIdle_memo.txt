@@ -1,0 +1,121 @@
+Upgrades ideas:
+Reduce minimum deck size by 1
+Player can have multiple HP bar
+
+- Cards costing 1 become free
+- Multi-color cards refund mana on play
+Rarer card refound mana or more powerful
+- Multi-hit attacks gain extra hits
+- First attack each fight deals bonus damage
+- Attacks gain execute bonus against low-HP enemies
+- Damage scales with current mana pool
+- Damage scales with recent cards played
+- Overkill spills to the next monster
+- Kills trigger a bonus attack that damage the next enemy
+Attack card is played twice
+Auto discard if the full hand is unplayable
+- Every click also plays adjacent cards
+- More GP from bosses
+- Bonus GP for fast kills
+- Combo meter for damage scaling
+
+
+Unlock ideas:
+Add a button to open 10x packs
+Add a button to open all packs
+Add a button to upgrade all codex cards
+- Track color balance in deck builder
+Relics system
+Sticker system for card custimzation
+more codex upgrade level unlock
+Critical damage chance
+Character selection and passive skill, rpg system
+Unlock super rare feature card banner.
+Unlock pity system
+Unlock new rarity cosmatics
+Hold mouse button to click
+Deactive skills
+Mana zone for permenet mana generation
+
+
+ボスギミック
+・手札にゴミを入れる
+・手札を揺らせる
+・手札を一部ブロックする
+・ターン制1ターン1カード
+
+カードアーキタイプ
+・DOT付与
+・自傷
+・UNO？
+・モンスター召喚
+
+
+Implement schedule:
+・Implement stages
+Implement stage unlocks
+Implement stage debugs
+Implement new skills
+Implement Multicolor-mana
+Improve card upgrades
+
+Stage unlocks
+Stage 0:
+・Turn based combat
+・Unlock skill tree - unlock real-time system
+
+Stage 1:Slay the spire era
+・Unlock Shop
+・Unlock Codex
+・Unlock Card upgrades
+・Unlock new pack(Healing & Mana Generation)
+・Unlock new pack(Buff and multihit)
+・Unlock new packs(Mill and discard)
+・Unlock 5 pulls
+・Unlock Stage 2
+・Skill Unlocks:
+　・Draw 2 with 1 click
+　・Increase Max hand size
+　・Deal damage when play mana
+　・Draw cards are free to play
+  ・Card power flat increase
+  ・Overkill penatration
+　・Auto play Mana cards
+
+Stage 2:Magic the gathering era
+・Unlock Second Mana color
+・Unlock new packs(Debuff and DOT)
+・Unlock 10 pulls
+・Unlock 3 more Mana color (Self damage with huge mana card, 
+・Unlock colorless Mana
+・Unlock new rariety and different foil types
+・Enemy with simple TCG gimmicks(add garnet to hand)
+・Unlock Stage 3
+・Skill unlocks:
+
+　・Reduce Deck size
+  ・Mana requirement for all cards -1
+  ・Serious automation
+　・Quicker discard
+　・Mana carry over
+  ・Card power scaling increase
+
+
+Stage 3:Yugioh era
+・Unlock new monster zone and summon?
+・Unlock fusion summon & extra deck
+・Unlock Card custimization for cosmatics
+・Enemy with unique gimmicks(block hand with stuff attack player's cursor, attack player's hand)
+・Skill unlocks:
+ ・HP inflaction to 8000
+・Unlock multiple HP bar
+・Skill unlocks:
+　・Draw to full hand
+　・Fusion without fusion card
+  ・Reveal top card of the deck
+　・View full deck in order
+
+Stage 4:Gacha game era
+・Unlock Card custimization for funcitons(Sticker system)
+・Unlock Character selection and RPG system
+・Unlock Gacha banner and pity system
