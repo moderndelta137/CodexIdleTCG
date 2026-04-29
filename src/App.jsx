@@ -36,6 +36,7 @@ const parseCSV = (text) => {
 };
 
 const getAssetPath = (relativePath) => `${import.meta.env.BASE_URL}${relativePath}`;
+const slugifyAssetName = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 // --- Database & Constants ---
 
@@ -270,6 +271,7 @@ const loadGameData = async () => {
         value: parseInt(row.value) || 0,
         desc: row.desc,
         icon: ICON_MAP[row.icon] || Sword,
+        art: getAssetPath(`assets/card-art/${row.id}-${slugifyAssetName(row.name)}.jpg`),
       };
       if (row.manaBonus) card.manaBonus = parseInt(row.manaBonus);
       if (row.multiHit) card.multiHit = parseInt(row.multiHit);
@@ -558,9 +560,23 @@ const Card = ({ cardId, overrideCard, onPlay, onDiscard, effectiveCost, canAffor
          </div>
          
          <div className={`flex-grow w-full bg-slate-800 shadow-[inset_0_0_15px_rgba(0,0,0,0.8)] flex flex-col items-center justify-center relative overflow-hidden`}>
-             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.1),transparent)]" />
-             <IconComponent size={32 * scale} className={`relative z-10 ${getIconColor(card)} drop-shadow-[0_0_8px_currentColor]`} />
-         </div>
+             {card.art ? (
+                 <>
+                     <img
+                         src={card.art}
+                         alt=""
+                         className="absolute inset-0 h-full w-full object-cover"
+                         draggable="false"
+                     />
+                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_35%,rgba(0,0,0,0.35))]" />
+                 </>
+             ) : (
+                 <>
+                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.1),transparent)]" />
+                     <IconComponent size={32 * scale} className={`relative z-10 ${getIconColor(card)} drop-shadow-[0_0_8px_currentColor]`} />
+                 </>
+             )}
+          </div>
          
          <div className={`h-[42%] bg-[#e8deca] border border-black/40 rounded-sm p-1.5 shadow-[inset_0_0_8px_rgba(0,0,0,0.3)] text-black flex flex-col relative shrink-0 ${disableInteraction ? 'pointer-events-none' : 'pointer-events-auto'}`}>
              <div className="font-black uppercase mb-1 border-b border-black/20 pb-0.5 flex justify-between tracking-tighter" style={{ fontSize: `${0.6 * scale}rem` }}>
